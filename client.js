@@ -474,7 +474,7 @@ window.__ModuleLoader__.load({
     function GoalSection(props) {
       const { t, projection } = props;
       const goal = projection === undefined || projection === null ? undefined : projection.goal;
-      if (goal === undefined || goal.phase === 'complete') return null;
+      if (goal == null || goal.phase === 'complete') return null;
       const muted = goal.phase === 'paused';
       const error = goal.phase === 'blocked';
       return Section(t('section.goal'), 'goal',
@@ -487,7 +487,7 @@ window.__ModuleLoader__.load({
     /** Plan mode (`plan` projection): shown only while the effective target is plan mode. */
     function PlanSection(props) {
       const { t, plan } = props;
-      if (plan === undefined) return null;
+      if (plan == null) return null;
       if (!(plan.pending ? !plan.active : plan.active)) return null;
       return Section(t('section.plan'), 'plan',
         h('span', { className: 'dsh-todo-badge' }, t('plan.on')),
