@@ -1,6 +1,6 @@
 {
   "name": "@auxuwa/dsh-todo-panel",
-  "version": "1.1.2",
+  "version": "1.5.0",
   "private": true,
   "type": "module",
   "description": "Right-sidebar todo overview panel for the dsh web client: agent task list, goal, plan mode, personal todos, and notifications",
@@ -23,7 +23,7 @@
     "client": {
       "platform": "web",
       "immediately": true,
-      "inject": ["@deepseek-ai/dsh-client-ui-sidebar-right", "@deepseek-ai/dsh-client-locale", "@deepseek-ai/dsh-client-ui-session", "@deepseek-ai/dsh-api-session-controller", "@deepseek-ai/dsh-client-ui-settings"]
+      "inject": ["@deepseek-ai/dsh-client-ui-sidebar-right", "@deepseek-ai/dsh-client-locale", "@deepseek-ai/dsh-client-ui-session", "@deepseek-ai/dsh-api-session-controller", "@deepseek-ai/dsh-client-ui-settings", "@deepseek-ai/dsh-client-ui-layout"]
     }
   },
   "dependencies": {

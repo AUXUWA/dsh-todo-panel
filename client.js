@@ -3,6 +3,15 @@ window.__ModuleLoader__.load({
   factory(require) {
     const React = require('react');
     const h = React.createElement;
+    let primitives = null;
+    try {
+      primitives = require('@deepseek-ai/dsh-client-ui-primitives');
+    } catch (seedUnavailable) {
+      primitives = null;
+    }
+    /** Set at apply: the plugin's client context and its settings facade. */
+    let pluginCtx = null;
+    let pluginSettings = null;
 
     /** This implementation's identity in the tab system, and the key its body registers under. */
     const PLUGIN_ID = '@auxuwa/dsh-todo-panel';
@@ -14,11 +23,23 @@ window.__ModuleLoader__.load({
     const STORAGE_KEY = 'dsh.todoPanel.v1';
     /** The Host entry id whose settings document section this bundle reads and writes. */
     const ENTRY_ID = 'todo-panel';
+    /** localStorage fallback when the settings document does not serve this entry. */
+    const LOCAL_SETTINGS_KEY = 'dsh-todo-panel.settings.v1';
+    /** Schema defaults, also the base of the localStorage fallback. */
+    const SETTINGS_DEFAULTS = {
+      notifyGoalComplete: true,
+      notifyPlanSubmitted: true,
+      popupEnabled: true,
+      soundEnabled: true,
+      tone: 'chime',
+      customSoundUrl: '',
+      showSessionView: true,
+    };
     /** Config fields the settings form edits, in save order. */
-    const CONFIG_FIELDS = ['notifyGoalComplete', 'notifyPlanSubmitted', 'popupEnabled', 'soundEnabled', 'tone', 'customSoundUrl'];
+    const CONFIG_FIELDS = ['notifyGoalComplete', 'notifyPlanSubmitted', 'popupEnabled', 'soundEnabled', 'tone', 'customSoundUrl', 'showSessionView'];
+    /** The left-rail entry and its main panel share this id. */
+    const PANEL_ID = 'todo-panel';
 
-    /** Session projections the panel body reads, and the fallback when a face is unavailable. */
-    const PROJECTION_KEYS = ['todos', 'goal', 'plan'];
     const subscribeNoop = () => () => {};
     const getSnapshotNone = () => undefined;
 
@@ -83,9 +104,72 @@ window.__ModuleLoader__.load({
         '.dsh-todo-cfg-btn:hover:not(:disabled){background:color-mix(in srgb,var(--dsw-alias-state-business-tertiary,rgba(36,123,191,.16)),var(--dsw-alias-state-business-primary,#247bbf) 10%);}',
         '.dsh-todo-cfg-btn:disabled{opacity:.55;cursor:default;}',
         '.dsh-todo-cfg-saved{font-size:12px;color:var(--dsw-alias-label-tertiary,rgba(127,127,127,.7));}',
+        '.dsh-todo-cfg-section{display:flex;flex-direction:column;gap:10px;padding:14px 0;border-top:1px solid var(--dsw-alias-border-l1,rgba(127,127,127,.18));}',
+        '.dsh-todo-cfg-sectitle{margin:0;font-size:14px;font-weight:600;color:var(--dsw-alias-label-primary,inherit);}',
         '.dsh-todo-boundary{box-sizing:border-box;padding:12px;font-size:13px;line-height:20px;}',
         '.dsh-todo-boundary-title{margin:0 0 6px;font-weight:600;color:var(--dsw-alias-state-error-primary,#d05050);}',
         '.dsh-todo-boundary-detail{margin:0;padding:8px;font-size:11px;line-height:16px;white-space:pre-wrap;overflow-wrap:anywhere;color:var(--dsw-alias-label-secondary,inherit);background:var(--dsw-alias-interactive-bg-hover,rgba(127,127,127,.1));border-radius:8px;}',
+        '.dsh-todo-page{box-sizing:border-box;width:100%;max-width:760px;margin:0 auto;padding:20px 24px;height:100%;overflow-y:auto;}',
+        '.dsh-todo-page .dsh-todo{height:auto;min-height:100%;}',
+        '.dsh-todo-cfg-details{border-top:1px solid var(--dsw-alias-border-l1,rgba(127,127,127,.18));}',
+        '.dsh-todo-cfg-summary{cursor:pointer;font-size:12px;color:var(--dsw-alias-label-tertiary,rgba(127,127,127,.75));padding:4px 2px;list-style:none;}',
+        '.dsh-todo-cfg-summary::-webkit-details-marker{display:none;}',
+        '.dsh-todo-cfg-summary::before{content:"⚙ ";}',
+        '.dsh-todo-cfg-summary:hover{color:var(--dsw-alias-label-primary,inherit);}',
+        '.dsh-todo-cfg-panel{padding-top:10px;}',
+      ].join('\n');
+      document.head.appendChild(tag);
+    })();
+
+    // dsh-context-inspired polish; appended last so these rules win the cascade.
+    (function injectPolishStyles() {
+      if (typeof document === 'undefined') return;
+      const tagId = '@auxuwa/dsh-todo-panel/polish';
+      if (document.querySelector(`style[data-plugin-css="${tagId}"]`) !== null) return;
+      const tag = document.createElement('style');
+      tag.dataset.plugin = PLUGIN_ID;
+      tag.dataset.pluginCss = tagId;
+      tag.textContent = [
+        '.dsh-todo{gap:12px;}',
+        '.dsh-todo-hero{--hero-a:#7c5cff;--hero-b:#19b8c4;position:relative;flex:none;border:1px solid color-mix(in srgb,var(--hero-a) 22%,var(--dsw-alias-border-l1,rgba(127,127,127,.2)));border-radius:14px;background:radial-gradient(circle at 8% 0%,color-mix(in srgb,var(--hero-a) 13%,transparent),transparent 46%),linear-gradient(115deg,color-mix(in srgb,var(--hero-b) 6%,transparent),transparent 55%),var(--dsw-alias-bg-layer-1,transparent);padding:12px 14px 11px;overflow:hidden;box-shadow:0 8px 28px color-mix(in srgb,var(--hero-a) 7%,transparent);}',
+        '.dsh-todo-hero:after{content:"";position:absolute;inset:auto 0 0;height:2px;background:linear-gradient(90deg,var(--hero-a),var(--hero-b),transparent 88%);opacity:.7;}',
+        '.dsh-todo-eyebrow{color:var(--hero-a);letter-spacing:.18em;font-size:9px;font-weight:750;margin:0;}',
+        '.dsh-todo-header{display:flex;align-items:center;gap:9px;min-width:0;margin-top:2px;}',
+        '.dsh-todo-title{font-size:19px;font-weight:700;letter-spacing:-.02em;margin:0;line-height:1.2;}',
+        '.dsh-todo-beacon{display:inline-flex;align-items:flex-end;gap:2px;height:16px;margin-left:2px;}',
+        '.dsh-todo-beacon i{width:3px;border-radius:3px;background:linear-gradient(var(--hero-b),var(--hero-a));display:block;animation:dsh-todo-beacon 1.8s ease-in-out infinite;}',
+        '.dsh-todo-beacon i:nth-child(1){height:7px;}',
+        '.dsh-todo-beacon i:nth-child(2){height:15px;animation-delay:.18s;}',
+        '.dsh-todo-beacon i:nth-child(3){height:11px;animation-delay:.36s;}',
+        '@keyframes dsh-todo-beacon{0%,100%{opacity:.55;transform:scaleY(.65)}50%{opacity:1;transform:scaleY(1)}}',
+        '.dsh-todo-count{margin-left:auto;font-size:11px;color:var(--dsw-alias-label-secondary,rgba(127,127,127,.8));font-variant-numeric:tabular-nums;}',
+        '.dsh-todo-stats{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px;margin-top:9px;}',
+        '.dsh-todo-stat{border:1px solid color-mix(in srgb,var(--stat,#7c5cff) 14%,var(--dsw-alias-border-l1,rgba(127,127,127,.2)));border-radius:9px;padding:6px 9px 5px;background:color-mix(in srgb,var(--dsw-alias-bg-layer-1,transparent) 72%,transparent);min-width:0;}',
+        '.dsh-todo-stat dt{font-size:9px;color:var(--dsw-alias-label-secondary,rgba(127,127,127,.7));margin:0;white-space:nowrap;}',
+        '.dsh-todo-stat dd{margin:1px 0 0;font-size:18px;font-weight:720;line-height:1.15;font-variant-numeric:tabular-nums;color:var(--stat,inherit);}',
+        '.dsh-todo-stat-open{--stat:var(--dsw-alias-label-primary,inherit);}',
+        '.dsh-todo-stat-done{--stat:var(--dsw-alias-state-success-primary,#3a9e5f);}',
+        '.dsh-todo-input{border-radius:999px;padding:8px 13px;}',
+        '.dsh-todo-add{border-radius:999px;padding:0 14px;}',
+        '.dsh-todo-item{padding:6px 8px;border:1px solid transparent;border-radius:8px;transition:border-color .2s ease-in-out,background-color .2s ease-in-out,transform .2s ease-in-out,box-shadow .2s ease-in-out;}',
+        '.dsh-todo-item:hover{transform:translateY(-1px);border-color:var(--dsw-alias-border-l1,rgba(127,127,127,.25));box-shadow:0 2px 10px rgba(0,0,0,.08);}',
+        '.dsh-todo-sections{gap:10px;}',
+        '.dsh-todo-section{border:1px solid var(--dsw-alias-border-l1,rgba(127,127,127,.2));border-radius:12px;background:var(--dsw-alias-bg-layer-1,transparent);padding:10px 12px;gap:8px;min-width:0;}',
+        '.dsh-todo-section + .dsh-todo-section{border-top:1px solid var(--dsw-alias-border-l1,rgba(127,127,127,.2));padding-top:10px;}',
+        '.dsh-todo-sectitle:before{content:"";width:6px;height:6px;border-radius:50%;background:var(--dot,var(--dsw-alias-label-tertiary,rgba(127,127,127,.6)));flex:none;}',
+        '.dsh-todo-section.dsh-todo-c-mine{--dot:var(--dsw-alias-state-business-primary,#2E7FC2);}',
+        '.dsh-todo-section.dsh-todo-c-agent{--dot:#7c5cff;}',
+        '.dsh-todo-section.dsh-todo-c-goal{--dot:#19b8c4;}',
+        '.dsh-todo-section.dsh-todo-c-plan{--dot:var(--dsw-alias-state-success-primary,#3a9e5f);}',
+        '.dsh-todo-section.dsh-todo-c-subagents{--dot:#e0a63f;}',
+        '.dsh-todo-subagent{display:flex;flex-direction:column;gap:5px;border:1px dashed var(--dsw-alias-border-l1,rgba(127,127,127,.25));border-radius:9px;padding:7px 9px;min-width:0;}',
+        '.dsh-todo-subagent-head{display:flex;align-items:center;gap:8px;margin:0;min-width:0;}',
+        '.dsh-todo-subagent-name{flex:1;min-width:0;font-size:11.5px;font-weight:650;color:var(--dsw-alias-label-primary,inherit);overflow-wrap:anywhere;}',
+        '.dsh-todo-atask{padding:3px 6px;border-radius:7px;border-left:2px solid transparent;transition:background-color .2s ease-in-out,border-left-color .2s ease-in-out;}',
+        '.dsh-todo-atask:hover{background:var(--dsw-alias-interactive-bg-hover,rgba(127,127,127,.08));}',
+        '.dsh-todo-atask.dsh-todo-arunning{border-left-color:var(--dsw-alias-state-business-primary,#2E7FC2);}',
+        '.dsh-todo-clear{margin-left:0;border-radius:999px;}',
+        '@media (prefers-reduced-motion:reduce){.dsh-todo *,.dsh-todo-page *{transition:none!important;animation:none!important;}}',
       ].join('\n');
       document.head.appendChild(tag);
     })();
@@ -117,9 +201,6 @@ window.__ModuleLoader__.load({
       if (source === undefined) return () => undefined;
       return () => React.useSyncExternalStore(source.subscribe, source.getSnapshot);
     }
-
-    /** A source that always reads undefined, for projections the seat cannot reach. */
-    const NULL_SOURCE = { getSnapshot: () => undefined, subscribe: () => () => {} };
 
     /** Identity selector: seat-wrapped store hooks read the whole snapshot with it. */
     const identity = (value) => value;
@@ -171,6 +252,39 @@ window.__ModuleLoader__.load({
       }
     }
 
+    /** The checkbox glyph shared by the tab chip, the left-rail entry, and the guide card. */
+    function CheckboxGlyph({ size }) {
+      return h('svg', {
+        viewBox: '0 0 48 48', width: size, height: size, 'aria-hidden': true, focusable: 'false',
+        style: { flex: 'none', display: 'block' },
+      },
+      h('rect', { x: 3, y: 3, width: 42, height: 42, rx: 11, fill: '#2E7FC2' }),
+      h('rect', { x: 11, y: 11, width: 26, height: 26, rx: 7, fill: '#ffffff' }),
+      h('path', { d: 'M17.5 24.5l5 5L31 18.5', fill: 'none', stroke: '#1B5FA6', 'stroke-width': 4.2, 'stroke-linecap': 'round', 'stroke-linejoin': 'round' }));
+    }
+
+    /**
+     * The tab chip title: the checkbox glyph ahead of the captured title text,
+     * mirroring how the files page draws its folder icon.
+     */
+    function TodoTitle({ useTabInfo }) {
+      const { tab } = useTabInfo();
+      return h(React.Fragment, null, h(CheckboxGlyph, { size: 14 }), tab.title);
+    }
+
+    /** The left-rail entry glyph: outline style in currentColor, matching the other rail icons. */
+    function TodoPanelIcon({ size }) {
+      return h('svg', {
+        viewBox: '0 0 20 20', width: size ?? 20, height: size ?? 20,
+        fill: 'none', stroke: 'currentColor', 'stroke-width': 1.5,
+        'stroke-linecap': 'round', 'stroke-linejoin': 'round',
+        'aria-hidden': true, focusable: 'false',
+        style: { flex: 'none', display: 'block' },
+      },
+      h('rect', { x: 3.25, y: 3.25, width: 13.5, height: 13.5, rx: 4 }),
+      h('path', { d: 'M7 10.3l2.3 2.3 4-4.9' }));
+    }
+
     /** Guide capsule artwork: echoes the package icon — white checkbox, deep-blue check. */
     function GuideIconTodo() {
       return h('svg', {
@@ -189,8 +303,103 @@ window.__ModuleLoader__.load({
      * @param title - section title text.
      * @param children - content elements.
      */
-    function Section(title, children) {
-      return h('div', { className: 'dsh-todo-section' },
+    /** Browser-local todo state, shared by the right sidebar panel and the left manager. */
+    function useLocalTodos() {
+      const [todos, setTodos] = React.useState(loadTodos);
+      const [draft, setDraft] = React.useState('');
+      React.useEffect(() => {
+        saveTodos(todos);
+      }, [todos]);
+      const doneCount = todos.reduce((sum, item) => (item.done ? sum + 1 : sum), 0);
+      return {
+        todos,
+        draft,
+        setDraft,
+        doneCount,
+        hasDone: doneCount > 0,
+        add() {
+          const text = draft.trim();
+          if (text === '') return;
+          setTodos(todos.concat({
+            id: `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`,
+            text,
+            done: false,
+          }));
+          setDraft('');
+        },
+        toggle(id) {
+          setTodos(todos.map((row) => (row.id === id ? { ...row, done: !row.done } : row)));
+        },
+        remove(id) {
+          setTodos(todos.filter((row) => row.id !== id));
+        },
+        clearDone() {
+          setTodos(todos.filter((row) => !row.done));
+        },
+      };
+    }
+
+    /** The editable todo list, or the empty hint. */
+    function renderTodoList(t, todos, toggle, remove) {
+      if (todos.length === 0) {
+        return h('p', { className: 'dsh-todo-empty' }, t('empty'));
+      }
+      return h('ul', { className: 'dsh-todo-list' },
+        todos.map((item) => h('li', {
+          key: item.id, className: `dsh-todo-item${item.done ? ' dsh-todo-done' : ''}`,
+        },
+        h('input', {
+          className: 'dsh-todo-check', type: 'checkbox', checked: item.done,
+          'aria-label': t('toggle'),
+          onChange: () => toggle(item.id),
+        }),
+        h('span', { className: 'dsh-todo-text', onClick: () => toggle(item.id) }, item.text),
+        h('button', {
+          type: 'button', className: 'dsh-todo-remove',
+          'aria-label': t('remove'), title: t('remove'),
+          onClick: () => remove(item.id),
+        }, '✕'))));
+    }
+
+    /** The add-todo input row. */
+    function renderTodoForm(t, local) {
+      return h('form', {
+        className: 'dsh-todo-form',
+        onSubmit: (event) => {
+          event.preventDefault();
+          local.add();
+        },
+      },
+      h('input', {
+        className: 'dsh-todo-input', type: 'text', value: local.draft,
+        placeholder: t('placeholder'), 'aria-label': t('placeholder'),
+        onChange: (event) => local.setDraft(event.target.value),
+      }),
+      h('button', { type: 'submit', className: 'dsh-todo-add' }, t('add')));
+    }
+
+    /** The gradient page header: eyebrow, title, beacon, count, and stat tiles. */
+    function renderHero(t, eyebrowKey, todos, doneCount, clearControl) {
+      return h('div', { className: 'dsh-todo-hero' },
+        h('p', { className: 'dsh-todo-eyebrow' }, t(eyebrowKey)),
+        h('div', { className: 'dsh-todo-header' },
+          h('p', { className: 'dsh-todo-title' }, t('panel.title')),
+          h('span', { className: 'dsh-todo-beacon', 'aria-hidden': true }, h('i'), h('i'), h('i')),
+          h('span', { className: 'dsh-todo-count' },
+            t('count').replace('{done}', String(doneCount)).replace('{total}', String(todos.length))),
+          clearControl),
+        todos.length > 0 ? h('dl', { className: 'dsh-todo-stats' },
+          h('div', { className: 'dsh-todo-stat dsh-todo-stat-open' },
+            h('dt', null, t('stat.open')), h('dd', null, String(todos.length - doneCount))),
+          h('div', { className: 'dsh-todo-stat dsh-todo-stat-done' },
+            h('dt', null, t('stat.done')), h('dd', null, String(doneCount))),
+          h('div', { className: 'dsh-todo-stat' },
+            h('dt', null, t('stat.total')), h('dd', null, String(todos.length)))) : null);
+    }
+
+    /** One overview card: small title row with a colored dot plus children. */
+    function Section(title, mod, children) {
+      return h('div', { className: `dsh-todo-section dsh-todo-c-${mod}` },
         h('p', { className: 'dsh-todo-sectitle' }, title),
         children);
     }
@@ -200,23 +409,21 @@ window.__ModuleLoader__.load({
      * turn/start, so the last non-null list is kept dimmed until a fresh write.
      */
     function AgentSection(props) {
-      const useTodos = props.useTodos;
-      const value = useTodos(identity);
+      const { t, todos: value } = props;
       const lastRef = React.useRef(null);
       React.useEffect(() => {
         if (Array.isArray(value) && value.length > 0) lastRef.current = value;
       }, [value]);
-      const { t } = props;
       const current = Array.isArray(value);
       const todos = current ? value : lastRef.current;
       if (!Array.isArray(todos) || todos.length === 0) {
-        return Section(t('section.agent'), h('p', { className: 'dsh-todo-hint' }, t('agent.empty')));
+        return Section(t('section.agent'), 'agent', h('p', { className: 'dsh-todo-hint' }, t('agent.empty')));
       }
-      return Section(t('section.agent'),
+      return Section(t('section.agent'), 'agent',
         !current ? h('p', { className: 'dsh-todo-astale' }, t('agent.stale')) : null,
         todos.map((item, index) => h('div', {
           key: `${index}:${item.content}`,
-          className: `dsh-todo-atask${item.status === 'completed' ? ' dsh-todo-acompleted' : ''}`,
+          className: `dsh-todo-atask${item.status === 'completed' ? ' dsh-todo-acompleted' : ''}${item.status === 'in_progress' ? ' dsh-todo-arunning' : ''}`,
         },
         h('span', {
           className: `dsh-todo-aglyph${item.status === 'in_progress' ? ' dsh-todo-aactive' : ''}`,
@@ -225,16 +432,52 @@ window.__ModuleLoader__.load({
         h('span', { className: 'dsh-todo-atext' }, item.content))));
     }
 
+    /**
+     * Subagent linkage: one card per child session in the parent's
+     * `subagentCatalog` projection, each rendering the child's own `todos`
+     * projection when the catalog serves it.
+     */
+    function SubagentsSection(props) {
+      const { t, catalog, readChildValues } = props;
+      if (!Array.isArray(catalog) || catalog.length === 0) return null;
+      const blocks = [];
+      for (const entry of catalog) {
+        if (entry === null || typeof entry !== 'object' || typeof entry.id !== 'string') continue;
+        const childValues = readChildValues(entry.id);
+        const todos = Array.isArray(childValues?.todos) ? childValues.todos : null;
+        const running = todos !== null && todos.some((item) => item?.status === 'in_progress');
+        blocks.push(h('div', { key: entry.id, className: 'dsh-todo-subagent' },
+          h('p', { className: 'dsh-todo-subagent-head' },
+            h('span', { className: 'dsh-todo-subagent-name' }, entry.label ?? entry.id),
+            h('span', {
+              className: `dsh-todo-badge${running ? '' : ' dsh-todo-badgemuted'}`,
+            }, running ? t('subagent.running') : t('subagent.idle'))),
+          todos === null
+            ? h('p', { className: 'dsh-todo-hint' }, t('subagent.noTodos'))
+            : todos.length === 0
+              ? h('p', { className: 'dsh-todo-hint' }, t('subagent.empty'))
+              : todos.map((item, index) => h('div', {
+                key: `${index}:${item?.content ?? index}`,
+                className: `dsh-todo-atask${item?.status === 'completed' ? ' dsh-todo-acompleted' : ''}${item?.status === 'in_progress' ? ' dsh-todo-arunning' : ''}`,
+              },
+              h('span', {
+                className: `dsh-todo-aglyph${item?.status === 'in_progress' ? ' dsh-todo-aactive' : ''}`,
+                'aria-hidden': true,
+              }, AGENT_GLYPHS[item?.status] ?? '○'),
+              h('span', { className: 'dsh-todo-atext' }, String(item?.content ?? ''))))));
+      }
+      if (blocks.length === 0) return null;
+      return Section(t('section.subagents'), 'subagents', blocks);
+    }
+
     /** The session goal (`goal` projection), read-only; hidden when absent or complete. */
     function GoalSection(props) {
-      const useGoal = props.useGoal;
-      const { t } = props;
-      const projection = useGoal(identity);
+      const { t, projection } = props;
       const goal = projection === undefined || projection === null ? undefined : projection.goal;
       if (goal === undefined || goal.phase === 'complete') return null;
       const muted = goal.phase === 'paused';
       const error = goal.phase === 'blocked';
-      return Section(t('section.goal'),
+      return Section(t('section.goal'), 'goal',
         h('p', { className: 'dsh-todo-objective' }, goal.objective),
         h('span', {
           className: `dsh-todo-badge${muted ? ' dsh-todo-badgemuted' : ''}${error ? ' dsh-todo-badgeerror' : ''}`,
@@ -243,12 +486,10 @@ window.__ModuleLoader__.load({
 
     /** Plan mode (`plan` projection): shown only while the effective target is plan mode. */
     function PlanSection(props) {
-      const usePlan = props.usePlan;
-      const { t } = props;
-      const plan = usePlan(identity);
+      const { t, plan } = props;
       if (plan === undefined) return null;
       if (!(plan.pending ? !plan.active : plan.active)) return null;
-      return Section(t('section.plan'),
+      return Section(t('section.plan'), 'plan',
         h('span', { className: 'dsh-todo-badge' }, t('plan.on')),
         h('p', { className: 'dsh-todo-hint' }, t('plan.hint')));
     }
@@ -260,84 +501,30 @@ window.__ModuleLoader__.load({
      */
     function TodoBody(props) {
       const { t } = props;
-      const useTodosMine = React.useState(loadTodos);
-      const todos = useTodosMine[0];
-      const setTodos = useTodosMine[1];
-      const [draft, setDraft] = React.useState('');
-      React.useEffect(() => {
-        saveTodos(todos);
-      }, [todos]);
-      const doneCount = todos.reduce((sum, item) => (item.done ? sum + 1 : sum), 0);
-      const hasDone = doneCount > 0;
+      const local = useLocalTodos();
+      const { todos, doneCount } = local;
 
-      const useAgentTodos = pickHook(props, 'todos');
-      const useGoal = pickHook(props, 'goal');
-      const usePlan = pickHook(props, 'plan');
-
-      const addTodo = () => {
-        const text = draft.trim();
-        if (text === '') return;
-        setTodos(todos.concat({
-          id: `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`,
-          text,
-          done: false,
-        }));
-        setDraft('');
-      };
-
-      const toggleTodo = (id) => {
-        setTodos(todos.map((row) => (row.id === id ? { ...row, done: !row.done } : row)));
-      };
-      const removeTodo = (id) => {
-        setTodos(todos.filter((row) => row.id !== id));
-      };
+      const useValues = pickHook(props, 'values');
+      const values = useValues === null ? undefined : useValues(identity);
 
       return h('div', { className: 'dsh-todo' },
-        h('div', { className: 'dsh-todo-header' },
-          h('p', { className: 'dsh-todo-title' }, t('panel.title')),
-          h('span', { className: 'dsh-todo-count' },
-            t('count').replace('{done}', String(doneCount)).replace('{total}', String(todos.length))),
-          hasDone
+        renderHero(t, 'panel.eyebrow', todos, doneCount,
+          local.hasDone
             ? h('button', {
               type: 'button', className: 'dsh-todo-clear',
-              onClick: () => setTodos(todos.filter((row) => !row.done)),
+              onClick: local.clearDone,
             }, t('clearDone'))
             : null),
-        h('form', {
-          className: 'dsh-todo-form',
-          onSubmit: (event) => {
-            event.preventDefault();
-            addTodo();
-          },
-        },
-        h('input', {
-          className: 'dsh-todo-input', type: 'text', value: draft,
-          placeholder: t('placeholder'), 'aria-label': t('placeholder'),
-          onChange: (event) => setDraft(event.target.value),
-        }),
-        h('button', { type: 'submit', className: 'dsh-todo-add' }, t('add'))),
+        renderTodoForm(t, local),
         h('div', { className: 'dsh-todo-sections' },
-          Section(t('section.mine'),
-            todos.length === 0
-              ? h('p', { className: 'dsh-todo-empty' }, t('empty'))
-              : h('ul', { className: 'dsh-todo-list' },
-                todos.map((item) => h('li', {
-                  key: item.id, className: `dsh-todo-item${item.done ? ' dsh-todo-done' : ''}`,
-                },
-                h('input', {
-                  className: 'dsh-todo-check', type: 'checkbox', checked: item.done,
-                  'aria-label': t('toggle'),
-                  onChange: () => toggleTodo(item.id),
-                }),
-                h('span', { className: 'dsh-todo-text', onClick: () => toggleTodo(item.id) }, item.text),
-                h('button', {
-                  type: 'button', className: 'dsh-todo-remove',
-                  'aria-label': t('remove'), title: t('remove'),
-                  onClick: () => removeTodo(item.id),
-                }, '✕'))))),
-          useAgentTodos === null ? null : h(AgentSection, { t, useTodos: useAgentTodos }),
-          useGoal === null ? null : h(GoalSection, { t, useGoal }),
-          usePlan === null ? null : h(PlanSection, { t, usePlan })));
+          Section(t('section.mine'), 'mine', renderTodoList(t, local.todos, local.toggle, local.remove)),
+          h(AgentSection, { t, todos: values?.todos ?? null }),
+          h(SubagentsSection, { t, catalog: values?.subagentCatalog ?? null, readChildValues: (id) => sessionValuesOf(pluginCtx, id) }),
+          h(GoalSection, { t, projection: values?.goal ?? null }),
+          h(PlanSection, { t, plan: values?.plan ?? null }),
+          pluginSettings === null ? null : h('details', { className: 'dsh-todo-cfg-details' },
+            h('summary', { className: 'dsh-todo-cfg-summary' }, t('settings.sectionTitle')),
+            h('div', { className: 'dsh-todo-cfg-panel' }, h(ConfigForm, { t, settings: pluginSettings })))));
     }
 
     // ---------------------------------------------------------------------------
@@ -366,28 +553,106 @@ window.__ModuleLoader__.load({
       return withFields ?? candidates[0];
     }
 
-    /** The plugin-page configuration form (`view: 'page'` renders the editable form). */
+    /**
+     * Settings persistence: the Host settings document when it serves this
+     * entry, else a localStorage fallback carrying the same fields.
+     */
+    function createSettingsFacade(ctx) {
+      const scope = pickConfigScope(ctx);
+      const localListeners = new Set();
+      const hostReady = () => {
+        try {
+          const snapshot = scope?.getSnapshot();
+          return snapshot !== undefined && snapshot !== null && snapshot.status === 'ready'
+            && snapshot.value !== undefined && snapshot.value !== null && typeof snapshot.value === 'object'
+            ? snapshot
+            : undefined;
+        } catch (unreadableScope) {
+          return undefined;
+        }
+      };
+      const localRead = () => {
+        try {
+          const parsed = JSON.parse(localStorage.getItem(LOCAL_SETTINGS_KEY));
+          return parsed !== null && typeof parsed === 'object' ? parsed : {};
+        } catch (unreadableLocal) {
+          return {};
+        }
+      };
+      return {
+        /** Re-render tick for host-mode consumers; constant 'none' in local mode. */
+        hostTick() {
+          try {
+            const snapshot = scope?.getSnapshot();
+            return snapshot === undefined || snapshot === null ? 'none' : `${snapshot.status}:${String(snapshot.revision)}`;
+          } catch (unreadableScope) {
+            return 'none';
+          }
+        },
+        hostSubscribe(listener) {
+          return scope !== undefined ? scope.subscribe(listener) : () => {};
+        },
+        /** Change notification for both channels; drives the session-view toggle. */
+        subscribe(listener) {
+          if (scope !== undefined) return scope.subscribe(listener);
+          localListeners.add(listener);
+          return () => localListeners.delete(listener);
+        },
+        read() {
+          const ready = hostReady();
+          if (ready !== undefined) {
+            return { source: 'host', value: { ...SETTINGS_DEFAULTS, ...ready.value }, writable: ready.writable !== false };
+          }
+          if (scope !== undefined) {
+            try {
+              const snapshot = scope.getSnapshot();
+              if (snapshot !== undefined && snapshot !== null && snapshot.status === 'loading') {
+                return { source: 'loading', value: { ...SETTINGS_DEFAULTS }, writable: false };
+              }
+            } catch (unreadableScope) {
+              // Fall through to the local store.
+            }
+          }
+          return { source: 'local', value: { ...SETTINGS_DEFAULTS, ...localRead() }, writable: true };
+        },
+        async apply(patch) {
+          const ready = hostReady();
+          if (ready !== undefined) {
+            const ops = [];
+            for (const [field, fieldValue] of Object.entries(patch)) {
+              if (field === 'customSoundUrl' && fieldValue === '') ops.push({ op: 'unset', path: [field] });
+              else ops.push({ op: 'set', path: [field], value: fieldValue });
+            }
+            if (ops.length > 0) await scope.mutate(ops);
+            return;
+          }
+          try {
+            localStorage.setItem(LOCAL_SETTINGS_KEY, JSON.stringify({ ...localRead(), ...patch }));
+          } catch (storageUnavailable) {
+            // Keep the draft; values persist for this session only.
+          }
+          for (const listener of [...localListeners]) listener();
+        },
+      };
+    }
+
+    /** The configuration form, bound to one settings facade (plugin page or panel). */
     function ConfigForm(props) {
       const { t, view } = props;
-      const scope = props.configScope;
-      const snapshot = React.useSyncExternalStore(
-        scope === undefined ? subscribeNoop : scope.subscribe,
-        scope === undefined ? getSnapshotNone : scope.getSnapshot);
+      const settings = props.settings;
+      React.useSyncExternalStore(
+        settings === undefined || settings === null ? subscribeNoop : settings.hostSubscribe,
+        settings === undefined || settings === null ? getSnapshotNone : settings.hostTick);
       const [draft, setDraft] = React.useState(null);
       const [saving, setSaving] = React.useState(false);
       const [savedTick, setSavedTick] = React.useState(0);
-      React.useEffect(() => {
-        setDraft(null);
-      }, [snapshot?.revision]);
-      if (view === 'summary') return null;
-      if (scope === undefined || snapshot === undefined || snapshot.status === 'unavailable') {
-        return h('p', { className: 'dsh-todo-cfg-hint' }, t('settings.unavailable'));
-      }
-      const value = draft ?? snapshot.value;
-      if (value === undefined || value === null || typeof value !== 'object') {
+      if (view === 'summary' || settings === undefined || settings === null) return null;
+      const info = settings.read();
+      if (info.source === 'loading') {
         return h('p', { className: 'dsh-todo-cfg-hint' }, t('settings.loading'));
       }
-      const readOnly = snapshot.writable === false;
+      const value = draft ?? info.value;
+      const readOnly = info.writable === false;
       const dirty = draft !== null;
       const edit = (field, next) => setDraft({ ...value, [field]: next });
 
@@ -395,16 +660,11 @@ window.__ModuleLoader__.load({
         if (!dirty || saving || readOnly) return;
         setSaving(true);
         try {
-          const ops = [];
+          const patch = {};
           for (const field of CONFIG_FIELDS) {
-            if (draft[field] === snapshot.value[field]) continue;
-            if (field === 'customSoundUrl' && draft[field] === '') {
-              ops.push({ op: 'unset', path: [field] });
-            } else {
-              ops.push({ op: 'set', path: [field], value: draft[field] });
-            }
+            if (draft[field] !== info.value[field]) patch[field] = draft[field];
           }
-          if (ops.length > 0) await scope.mutate(ops);
+          if (Object.keys(patch).length > 0) await settings.apply(patch);
           setDraft(null);
           setSavedTick((tick) => tick + 1);
         } finally {
@@ -456,6 +716,13 @@ window.__ModuleLoader__.load({
               type: 'button', className: 'dsh-todo-cfg-btn',
               onClick: () => playSound({ tone: value.tone, customSoundUrl: value.customSoundUrl }, { last: 0 }),
             }, t('settings.test')))),
+        h('div', { className: 'dsh-todo-cfg-row' },
+          h('span', { className: 'dsh-todo-cfg-label' }, t('settings.showSessionView')),
+          h('input', {
+            type: 'checkbox', className: 'dsh-todo-cfg-check', disabled: readOnly,
+            checked: value.showSessionView === true,
+            onChange: (event) => edit('showSessionView', event.target.checked),
+          })),
         value.tone === 'custom'
           ? h('div', { className: 'dsh-todo-cfg-field' },
             h('input', {
@@ -583,20 +850,114 @@ window.__ModuleLoader__.load({
       return snapshot.pending ? !snapshot.active : snapshot.active;
     }
 
+    /** One current-notice cell for the shell overlay toast. */
+    function createNoticeStore() {
+      let value = null;
+      const listeners = new Set();
+      return {
+        getSnapshot: () => value,
+        subscribe(listener) {
+          listeners.add(listener);
+          return () => listeners.delete(listener);
+        },
+        set(next) {
+          if (value === next) return;
+          value = next;
+          for (const listener of [...listeners]) listener();
+        },
+      };
+    }
+
+    /** Live {todos, goal, plan, subagentCatalog} values of one session, off the sessions catalog. */
+    function sessionValuesSource(ctx, sessionId) {
+      const list = ctx.sessions.list;
+      return {
+        getSnapshot: () => {
+          try {
+            return list.getSnapshot()?.projectionsBySession?.[sessionId]?.values ?? undefined;
+          } catch (unavailableCatalog) {
+            return undefined;
+          }
+        },
+        subscribe: (listener) => list.subscribe(listener),
+      };
+    }
+
+    /** One session's projection values straight from the catalog snapshot. */
+    function sessionValuesOf(ctx, sessionId) {
+      try {
+        return ctx.sessions.list.getSnapshot()?.projectionsBySession?.[sessionId]?.values ?? undefined;
+      } catch (unavailableCatalog) {
+        return undefined;
+      }
+    }
+
+    /**
+     * The left main panel: a session-free local todo manager. The session-bound
+     * overview stays in the right sidebar; this surface only edits the browser-
+     * local list, so it works with no Session selected.
+     */
+    function TodoManagerPanel(props) {
+      const translate = props.t ?? ((key) => key);
+      const local = useLocalTodos();
+      const { todos, doneCount } = local;
+      return h('div', { className: 'dsh-todo-page' },
+        h(PanelBoundary, null,
+          h('div', { className: 'dsh-todo' },
+            renderHero(translate, 'panel.eyebrowLocal', todos, doneCount,
+              local.hasDone
+                ? h('button', {
+                  type: 'button', className: 'dsh-todo-clear',
+                  onClick: local.clearDone,
+                }, translate('clearDone'))
+                : null),
+            renderTodoForm(translate, local),
+            h('div', { className: 'dsh-todo-sections' },
+              Section(translate('section.mine'), 'mine', renderTodoList(translate, local.todos, local.toggle, local.remove)),
+              pluginSettings === null ? null : h('details', { className: 'dsh-todo-cfg-details' },
+                h('summary', { className: 'dsh-todo-cfg-summary' }, translate('settings.sectionTitle')),
+                h('div', { className: 'dsh-todo-cfg-panel' }, h(ConfigForm, { t: translate, settings: pluginSettings })))))));
+    }
+
+    /** The shell overlay toast for one notification, drawn with the product's Toast. */
+    function NotifyToast(props) {
+      const notices = props.hooks?.notices;
+      const notice = React.useSyncExternalStore(
+        notices === undefined ? subscribeNoop : notices.subscribe,
+        notices === undefined ? getSnapshotNone : notices.getSnapshot);
+      if (notice === null || primitives === null || typeof primitives.Toast !== 'function') return null;
+      return h(primitives.Toast, {
+        text: notice.text,
+        onDone: () => props.dismissNotice(),
+      }, notice.seq);
+    }
+
     return {
-      inject: ['slots', 'locale', 'sidebarRightTabs', 'sessions', 'configForms'],
+      inject: ['slots', 'locale', 'sidebarRightTabs', 'sidebarRight', 'sessions', 'configForms', 'layout', 'uiSession'],
       apply(ctx) {
+        pluginCtx = ctx;
+        pluginSettings = createSettingsFacade(ctx);
         const t = ctx.locale.bind(NS);
+        const noticeStore = createNoticeStore();
+        const noticeSource = { getSnapshot: noticeStore.getSnapshot, subscribe: noticeStore.subscribe };
+        let noticeSeq = 0;
         ctx.effect(() => ctx.locale.register(NS, {
           zh: {
             'type.label': '待办',
             'guide.title': '待办',
             'guide.description': '会话总览：Agent 任务列表、目标、计划模式和个人待办。',
+            'view.label': '待办',
             'panel.title': '待办',
+            'panel.eyebrow': '会话总览',
+            'panel.eyebrowLocal': '本地待办',
+            'stat.open': '待完成',
+            'stat.done': '已完成',
+            'stat.total': '全部',
             'section.mine': '我的待办',
             'section.agent': 'Agent 任务列表',
             'section.goal': '目标',
             'section.plan': '计划模式',
+            'section.subagents': '子代理',
             'count': '已完成 {done}/{total}',
             'placeholder': '添加待办，回车确认',
             'add': '添加',
@@ -612,6 +973,10 @@ window.__ModuleLoader__.load({
             'goal.phase.complete': '已完成',
             'plan.on': '已开启',
             'plan.hint': '提出计划后需要确认才能开始实施。',
+            'subagent.running': '运行中',
+            'subagent.idle': '空闲',
+            'subagent.noTodos': '该子代理还没有任务列表。',
+            'subagent.empty': '该子代理暂无任务。',
             'settings.notifyGoalComplete': '目标完成时提醒',
             'settings.notifyPlanSubmitted': '计划模式结束（计划已提交）时提醒',
             'settings.popupEnabled': '显示弹窗提醒',
@@ -626,7 +991,9 @@ window.__ModuleLoader__.load({
             'settings.save': '保存',
             'settings.saving': '保存中…',
             'settings.saved': '已保存',
+            'settings.showSessionView': '在会话视图显示“待办”',
             'settings.readOnly': '当前部署的设置为只读。',
+            'settings.sectionTitle': '通知与提示音',
             'settings.unavailable': '此插件的设置暂不可用，通知将使用默认行为（弹窗 + 和弦）。',
             'settings.loading': '正在读取设置…',
             'notify.goal': '目标已完成',
@@ -636,11 +1003,18 @@ window.__ModuleLoader__.load({
             'type.label': 'Todos',
             'guide.title': 'Todos',
             'guide.description': 'Session overview: agent task list, goal, plan mode, and your own todos.',
+            'view.label': 'Todos',
             'panel.title': 'Todos',
+            'panel.eyebrow': 'Session overview',
+            'panel.eyebrowLocal': 'Local todos',
+            'stat.open': 'Open',
+            'stat.done': 'Done',
+            'stat.total': 'Total',
             'section.mine': 'My todos',
             'section.agent': 'Agent task list',
             'section.goal': 'Goal',
             'section.plan': 'Plan mode',
+            'section.subagents': 'Subagents',
             'count': '{done}/{total} done',
             'placeholder': 'Add a todo and press Enter',
             'add': 'Add',
@@ -656,6 +1030,10 @@ window.__ModuleLoader__.load({
             'goal.phase.complete': 'Completed',
             'plan.on': 'On',
             'plan.hint': 'Plans need your confirmation before implementation.',
+            'subagent.running': 'Running',
+            'subagent.idle': 'Idle',
+            'subagent.noTodos': 'This subagent has no task list.',
+            'subagent.empty': 'No tasks for this subagent.',
             'settings.notifyGoalComplete': 'Notify when the goal completes',
             'settings.notifyPlanSubmitted': 'Notify when plan mode ends (plan submitted)',
             'settings.popupEnabled': 'Show popup notification',
@@ -670,7 +1048,9 @@ window.__ModuleLoader__.load({
             'settings.save': 'Save',
             'settings.saving': 'Saving…',
             'settings.saved': 'Saved',
+            'settings.showSessionView': 'Show Todos as a session view',
             'settings.readOnly': 'Settings are read-only in this deployment.',
+            'settings.sectionTitle': 'Notifications & sound',
             'settings.unavailable': "This plugin's settings are unavailable; notifications use the defaults (popup + chime).",
             'settings.loading': 'Loading settings…',
             'notify.goal': 'Goal completed',
@@ -693,46 +1073,40 @@ window.__ModuleLoader__.load({
           name: 'sidebar.right.pane.tab',
           key: PLUGIN_ID,
           locale: NS,
-          inject: (sessionId) => {
-            const hooks = {};
-            for (const key of PROJECTION_KEYS) hooks[key] = NULL_SOURCE;
-            try {
-              const projections = ctx.sessions.binding(sessionId)?.session?.projections;
-              if (projections === undefined || projections === null) return { hooks };
-              for (const key of PROJECTION_KEYS) {
-                try {
-                  const face = typeof projections.faceOf === 'function' ? projections.faceOf(key) : undefined;
-                  hooks[key] = isSource(face)
-                    ? { getSnapshot: () => face.getSnapshot(), subscribe: (listener) => face.subscribe(listener) }
-                    : NULL_SOURCE;
-                } catch (unreadableFace) {
-                  hooks[key] = NULL_SOURCE;
-                }
-              }
-            } catch (unavailableSession) {
-              // Leave every hook at the null source; sections hide themselves.
-            }
-            return { hooks };
-          },
+          inject: (sessionId) => ({ hooks: { values: sessionValuesSource(ctx, sessionId) } }),
         }, (props) => h(PanelBoundary, null, h(TodoBody, props)))), 'todo panel: tab body');
-        ctx.effect(() => ctx.slots.inject('plugins.bundle.config', () => ctx.slots.register({
-          name: 'plugins.bundle.config',
-          key: PLUGIN_ID,
+        // The Plugins page hosts the form through three seats; detail.section is
+        // the unconditional fallback the page always renders for this bundle.
+        const registerConfigForm = (slotName, key) => ctx.slots.inject(slotName, () => ctx.slots.register({
+          name: slotName,
+          key,
           locale: NS,
-        }, (props) => ConfigForm({ ...props, configScope: pickConfigScope(ctx) }))), 'todo panel: plugin page config');
+        }, (props) => ConfigForm({ ...props, settings: pluginSettings })));
+        ctx.effect(() => registerConfigForm('plugins.bundle.config', PLUGIN_ID), 'todo panel: bundle page config');
+        ctx.effect(() => registerConfigForm('plugins.row.config', `${PLUGIN_ID}#todo-panel`), 'todo panel: row page config');
+        ctx.effect(() => ctx.slots.inject('plugins.detail.section', () => ctx.slots.register({
+          name: 'plugins.detail.section',
+          id: 'todo-panel-config',
+          order: 5,
+          locale: NS,
+        }, (props) => {
+          const subject = props.subject;
+          if (subject === undefined || subject === null || subject.kind !== 'bundle' || subject.pkg?.name !== PLUGIN_ID) return null;
+          return h('section', { className: 'dsh-todo-cfg-section' },
+            h('p', { className: 'dsh-todo-cfg-sectitle' }, t('settings.sectionTitle')),
+            h(ConfigForm, { t: props.t ?? t, settings: pluginSettings }));
+        })), 'todo panel: bundle detail section');
 
         // Notifications live at module level so they fire while the panel is closed.
         ctx.effect(() => {
-          const configScope = pickConfigScope(ctx);
           const readConfig = () => {
             try {
-              const value = configScope?.getSnapshot()?.value;
-              return value !== undefined && value !== null && typeof value === 'object' ? value : {};
+              return pluginSettings === null ? {} : pluginSettings.read().value;
             } catch (unreadableConfig) {
               return {};
             }
           };
-          const toaster = createToaster();
+          const toaster = primitives === null ? createToaster() : null;
           const soundGate = { last: 0 };
           const warm = () => ensureAudio();
           document.addEventListener('pointerdown', warm, { capture: true });
@@ -740,85 +1114,117 @@ window.__ModuleLoader__.load({
             const config = readConfig();
             if (kind === 'goal' && config.notifyGoalComplete === false) return;
             if (kind === 'plan' && config.notifyPlanSubmitted === false) return;
-            if (config.popupEnabled !== false) toaster.show(t(kind === 'goal' ? 'notify.goal' : 'notify.plan'));
+            if (config.popupEnabled !== false) {
+              const text = t(kind === 'goal' ? 'notify.goal' : 'notify.plan');
+              if (toaster !== null) toaster.show(text);
+              else noticeStore.set({ seq: ++noticeSeq, text });
+            }
             if (config.soundEnabled !== false) playSound(config, soundGate);
           };
           const states = new Map();
-          const faceOf = (projections, key) => {
+          const scan = () => {
+            let map;
             try {
-              const face = projections.faceOf(key);
-              return face !== undefined && typeof face.getSnapshot === 'function' && typeof face.subscribe === 'function' ? face : undefined;
-            } catch (unreadableProjection) {
-              return undefined;
-            }
-          };
-          const attach = (sessionId) => {
-            if (states.has(sessionId)) return;
-            let projections;
-            try {
-              projections = ctx.sessions.binding(sessionId)?.session.projections;
-            } catch (unavailableBinding) {
-              return;
-            }
-            if (projections === undefined || projections === null) return;
-            const record = { goalPhase: undefined, planEffective: undefined, disposers: [] };
-            const goalFace = faceOf(projections, 'goal');
-            if (goalFace !== undefined) {
-              record.goalPhase = goalPhaseOf(goalFace.getSnapshot());
-              record.disposers.push(goalFace.subscribe(() => {
-                const next = goalPhaseOf(goalFace.getSnapshot());
-                const previous = record.goalPhase;
-                record.goalPhase = next;
-                if (previous !== undefined && previous !== 'complete' && next === 'complete') notify('goal');
-              }));
-            }
-            const planFace = faceOf(projections, 'plan');
-            if (planFace !== undefined) {
-              record.planEffective = planEffectiveOf(planFace.getSnapshot());
-              record.disposers.push(planFace.subscribe(() => {
-                const next = planEffectiveOf(planFace.getSnapshot());
-                const previous = record.planEffective;
-                record.planEffective = next;
-                if (previous === true && next === false) notify('plan');
-              }));
-            }
-            if (record.disposers.length > 0) states.set(sessionId, record);
-          };
-          const detach = (sessionId) => {
-            const record = states.get(sessionId);
-            if (record === undefined) return;
-            for (const dispose of record.disposers) dispose();
-            states.delete(sessionId);
-          };
-          const reconcile = () => {
-            let ids;
-            try {
-              ids = Object.keys(ctx.sessions.list.getSnapshot()?.byId ?? {});
+              map = ctx.sessions.list.getSnapshot()?.projectionsBySession ?? {};
             } catch (unavailableCatalog) {
-              ids = [];
+              map = {};
             }
-            const seen = new Set(ids);
-            for (const id of ids) attach(id);
-            for (const id of [...states.keys()]) {
-              if (!seen.has(id)) detach(id);
+            const seen = new Set();
+            for (const [sessionId, snapshot] of Object.entries(map)) {
+              seen.add(sessionId);
+              const values = snapshot?.values;
+              if (values === undefined || values === null || typeof values !== 'object') continue;
+              const record = states.get(sessionId) ?? { goalPhase: undefined, planEffective: undefined };
+              const nextGoal = goalPhaseOf(values.goal ?? undefined);
+              const previousGoal = record.goalPhase;
+              if (previousGoal !== undefined && previousGoal !== 'complete' && nextGoal === 'complete') notify('goal');
+              const nextPlan = planEffectiveOf(values.plan ?? undefined);
+              const previousPlan = record.planEffective;
+              if (previousPlan === true && nextPlan === false) notify('plan');
+              states.set(sessionId, { goalPhase: nextGoal, planEffective: nextPlan });
+            }
+            for (const sessionId of [...states.keys()]) {
+              if (!seen.has(sessionId)) states.delete(sessionId);
             }
           };
           let offCatalog;
           try {
-            offCatalog = ctx.sessions.list.subscribe(reconcile);
+            offCatalog = ctx.sessions.list.subscribe(scan);
           } catch (unavailableCatalog) {
             offCatalog = undefined;
           }
-          reconcile();
-          const timer = setInterval(reconcile, 3000);
+          scan();
+          const timer = setInterval(scan, 2000);
           return () => {
             clearInterval(timer);
             if (offCatalog !== undefined) offCatalog();
             document.removeEventListener('pointerdown', warm, { capture: true });
-            for (const id of [...states.keys()]) detach(id);
-            toaster.dispose();
+            states.clear();
+            if (toaster !== null) toaster.dispose();
           };
         }, 'todo panel: notifications');
+        ctx.effect(() => ctx.slots.inject('sidebar.right.pane.tab.title', () => ctx.slots.register({
+          name: 'sidebar.right.pane.tab.title',
+          key: PLUGIN_ID,
+        }, TodoTitle)), 'todo panel: tab title');
+        ctx.effect(() => ctx.slots.inject('sidebar.panellist', () => ctx.slots.register({
+          name: 'sidebar.panellist',
+          id: PANEL_ID,
+          order: 60,
+          label: () => t('panel.title'),
+          locale: NS,
+        }, TodoPanelIcon)), 'todo panel: left rail entry');
+        ctx.effect(() => ctx.slots.inject('main', () => ctx.slots.register({
+          name: 'main',
+          key: PANEL_ID,
+          locale: NS,
+        }, TodoManagerPanel)), 'todo panel: left main panel');
+        ctx.effect(() => ctx.slots.inject('shell.overlay', () => ctx.slots.register({
+          name: 'shell.overlay',
+          id: 'todo-panel.notify',
+          locale: NS,
+          inject: () => ({
+            hooks: { notices: noticeSource },
+            dismissNotice: () => noticeStore.set(null),
+          }),
+        }, NotifyToast)), 'todo panel: notify toast');
+        ctx.effect(() => {
+          let disposeView;
+          const sync = () => {
+            let enabled = true;
+            try {
+              enabled = pluginSettings === null || pluginSettings.read().value.showSessionView !== false;
+            } catch (unreadableSettings) {
+              enabled = true;
+            }
+            try {
+              if (enabled && disposeView === undefined) {
+                disposeView = ctx.slots.inject('conversation.view', () => ctx.slots.register({
+                  name: 'conversation.view',
+                  id: 'todo',
+                  order: 50,
+                  locale: NS,
+                  label: () => t('view.label'),
+                  inject: (sessionId) => ({ hooks: { values: sessionValuesSource(ctx, sessionId) } }),
+                }, (props) => h(PanelBoundary, null, h('div', { className: 'dsh-todo-page' }, h(TodoBody, {
+                  t: props.t ?? t,
+                  hooks: props.hooks ?? {},
+                })))));
+              } else if (!enabled && disposeView !== undefined) {
+                disposeView();
+                disposeView = undefined;
+              }
+            } catch (viewSyncFailed) {
+              console.error('[dsh-todo-panel] session view sync failed:', viewSyncFailed);
+            }
+          };
+          const offSettings = pluginSettings === null ? () => {} : pluginSettings.subscribe(sync);
+          sync();
+          return () => {
+            offSettings();
+            if (disposeView !== undefined) disposeView();
+          };
+        }, 'todo panel: session view');
       },
     };
   },
