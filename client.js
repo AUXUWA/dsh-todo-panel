@@ -34,11 +34,9 @@ window.__ModuleLoader__.load({
       tone: 'chime',
       customSoundUrl: '',
       showSessionView: true,
-      takeoverDocks: true,
-      autoOpen: true,
     };
     /** Config fields the settings form edits, in save order. */
-    const CONFIG_FIELDS = ['notifyGoalComplete', 'notifyPlanSubmitted', 'popupEnabled', 'soundEnabled', 'tone', 'customSoundUrl', 'showSessionView', 'takeoverDocks', 'autoOpen'];
+    const CONFIG_FIELDS = ['notifyGoalComplete', 'notifyPlanSubmitted', 'popupEnabled', 'soundEnabled', 'tone', 'customSoundUrl', 'showSessionView'];
     /** The left-rail entry and its main panel share this id. */
     const PANEL_ID = 'todo-panel';
 
@@ -418,14 +416,29 @@ window.__ModuleLoader__.load({
      * The Agent's harness task list (`todos` projection). The projection clears at
      * turn/start, so the last non-null list is kept dimmed until a fresh write.
      */
+    /**
+     * Last non-empty task list per session. The harness clears the `todos`
+     * projection at every turn/start, so between turns the only way to keep
+     * showing the session's plan is to retain it here — module scope survives
+     * panel remounts and tab switches.
+     */
+    const lastTodosBySession = new Map();
+
+    function rememberTodos(sessionId, todos) {
+      if (typeof sessionId === 'string' && sessionId !== '' && Array.isArray(todos) && todos.length > 0) {
+        lastTodosBySession.set(sessionId, todos);
+      }
+    }
+
+    function rememberedTodos(sessionId) {
+      return lastTodosBySession.get(sessionId) ?? null;
+    }
+
     function AgentSection(props) {
-      const { t, todos: value } = props;
-      const lastRef = React.useRef(null);
-      React.useEffect(() => {
-        if (Array.isArray(value) && value.length > 0) lastRef.current = value;
-      }, [value]);
+      const { t, todos: value, sessionId } = props;
       const current = Array.isArray(value);
-      const todos = current ? value : lastRef.current;
+      // Retain the live list; fall back to the turn-start-retained copy.
+      const todos = current ? value : rememberedTodos(sessionId);
       if (!Array.isArray(todos) || todos.length === 0) {
         return Section(t('section.agent'), 'agent', h('p', { className: 'dsh-todo-hint' }, t('agent.empty')));
       }
@@ -480,52 +493,6 @@ window.__ModuleLoader__.load({
       return Section(t('section.subagents'), 'subagents', blocks);
     }
 
-    /**
-     * The composer dock takeover: one compact card above the message input
-     * showing the agent task list and the session goal, replacing the built-in
-     * todo/goal docks while the takeover setting is on.
-     */
-    function CompactDock(props) {
-      const { t } = props;
-      const useProjection = typeof props.useProjection === 'function' ? props.useProjection : null;
-      if (useProjection === null) return null;
-      const todos = useProjection('todos') ?? [];
-      const goalProjection = useProjection('goal');
-      const goal = goalProjection == null ? undefined : goalProjection.goal;
-      const openCount = todos.filter((item) => item?.status !== 'completed').length;
-      if (todos.length === 0 && goal === undefined) return null;
-      const open = () => {
-        try {
-          pluginCtx.sidebarRight.openTab(KIND);
-        } catch (openFailed) {
-          // The sidebar opens when a session surface is mounted; ignore otherwise.
-        }
-      };
-      return h('div', { className: 'dsh-todo-dock', onClick: open, role: 'button', tabIndex: 0 },
-        h('div', { className: 'dsh-todo-dock-head' },
-          h('span', { className: 'dsh-todo-dock-title' }, t('dock.title')),
-          h('span', { className: 'dsh-todo-dock-count' },
-            t('count').replace('{done}', String(todos.length - openCount)).replace('{total}', String(todos.length)))),
-        goal !== undefined
-          ? h('div', { className: 'dsh-todo-dock-goal' },
-            h('span', { className: `dsh-todo-badge${goal.phase === 'blocked' ? ' dsh-todo-badgeerror' : goal.phase === 'paused' ? ' dsh-todo-badgemuted' : ''}` },
-              t(`goal.phase.${goal.phase}`)),
-            h('span', { className: 'dsh-todo-dock-goal-text' }, goal.objective))
-          : null,
-        todos.length > 0
-          ? h('div', { className: 'dsh-todo-dock-rows' },
-            todos.map((item, index) => h('div', {
-              key: `${index}:${item?.content ?? index}`,
-              className: `dsh-todo-atask${item?.status === 'completed' ? ' dsh-todo-acompleted' : ''}${item?.status === 'in_progress' ? ' dsh-todo-arunning' : ''}`,
-            },
-            h('span', {
-              className: `dsh-todo-aglyph${item?.status === 'in_progress' ? ' dsh-todo-aactive' : ''}`,
-              'aria-hidden': true,
-            }, AGENT_GLYPHS[item?.status] ?? '○'),
-            h('span', { className: 'dsh-todo-atext' }, String(item?.content ?? '')))))
-          : null);
-    }
-
     /** The session goal (`goal` projection), read-only; hidden when absent or complete. */
     function GoalSection(props) {
       const { t, projection } = props;
@@ -577,6 +544,7 @@ window.__ModuleLoader__.load({
         return values?.[key] ?? null;
       };
       const todosProjection = readProjection('todos');
+      rememberTodos(props.sessionId, todosProjection);
       const goalProjection = readProjection('goal');
       const planProjection = readProjection('plan');
       const catalogProjection = readProjection('subagentCatalog');
@@ -592,7 +560,7 @@ window.__ModuleLoader__.load({
         renderTodoForm(t, local),
         h('div', { className: 'dsh-todo-sections' },
           Section(t('section.mine'), 'mine', renderTodoList(t, local.todos, local.toggle, local.remove)),
-          h(AgentSection, { t, todos: todosProjection }),
+          h(AgentSection, { t, todos: todosProjection, sessionId: props.sessionId }),
           h(SubagentsSection, { t, catalog: catalogProjection, readChildValues: (id) => sessionValuesOf(pluginCtx, id) }),
           h(GoalSection, { t, projection: goalProjection }),
           h(PlanSection, { t, plan: planProjection }),
@@ -796,20 +764,6 @@ window.__ModuleLoader__.load({
             type: 'checkbox', className: 'dsh-todo-cfg-check', disabled: readOnly,
             checked: value.showSessionView === true,
             onChange: (event) => edit('showSessionView', event.target.checked),
-          })),
-        h('div', { className: 'dsh-todo-cfg-row' },
-          h('span', { className: 'dsh-todo-cfg-label' }, t('settings.takeoverDocks')),
-          h('input', {
-            type: 'checkbox', className: 'dsh-todo-cfg-check', disabled: readOnly,
-            checked: value.takeoverDocks === true,
-            onChange: (event) => edit('takeoverDocks', event.target.checked),
-          })),
-        h('div', { className: 'dsh-todo-cfg-row' },
-          h('span', { className: 'dsh-todo-cfg-label' }, t('settings.autoOpen')),
-          h('input', {
-            type: 'checkbox', className: 'dsh-todo-cfg-check', disabled: readOnly,
-            checked: value.autoOpen === true,
-            onChange: (event) => edit('autoOpen', event.target.checked),
           })),
         value.tone === 'custom'
           ? h('div', { className: 'dsh-todo-cfg-field' },
@@ -1359,50 +1313,6 @@ window.__ModuleLoader__.load({
             if (disposeView !== undefined) disposeView();
           };
         }, 'todo panel: session view');
-        ctx.effect(() => {
-          let disposeDock;
-          let hideTag;
-          const sync = () => {
-            let enabled = true;
-            try {
-              enabled = pluginSettings !== null && pluginSettings.read().value.takeoverDocks !== false;
-            } catch (unreadableSettings) {
-              enabled = true;
-            }
-            try {
-              if (enabled && disposeDock === undefined) {
-                disposeDock = ctx.slots.inject('conversation.input.dock', () => ctx.slots.register({
-                  name: 'conversation.input.dock',
-                  id: PANEL_ID,
-                  order: 0,
-                  locale: NS,
-                }, (props) => h(PanelBoundary, null, h(CompactDock, props))));
-              } else if (!enabled && disposeDock !== undefined) {
-                disposeDock();
-                disposeDock = undefined;
-              }
-              if (enabled && typeof document !== 'undefined' && hideTag === undefined) {
-                hideTag = document.createElement('style');
-                hideTag.dataset.plugin = PLUGIN_ID;
-                hideTag.dataset.pluginCss = '@auxuwa/dsh-todo-panel/dock-takeover';
-                hideTag.textContent = '[data-goal-bar]{display:none!important}[data-testid="todo-panel"]{display:none!important}';
-                document.head.appendChild(hideTag);
-              } else if (!enabled && hideTag !== undefined) {
-                hideTag.remove();
-                hideTag = undefined;
-              }
-            } catch (dockSyncFailed) {
-              console.error('[dsh-todo-panel] dock takeover sync failed:', dockSyncFailed);
-            }
-          };
-          const offSettings = pluginSettings === null ? () => {} : pluginSettings.subscribe(sync);
-          sync();
-          return () => {
-            offSettings();
-            if (disposeDock !== undefined) disposeDock();
-            if (hideTag !== undefined) hideTag.remove();
-          };
-        }, 'todo panel: dock takeover');
       },
     };
   },
