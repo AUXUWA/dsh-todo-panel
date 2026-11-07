@@ -472,26 +472,27 @@ window.__ModuleLoader__.load({
     }
 
     function AgentSection(props) {
-      const { t, todos: value, sessionId } = props;
+      const { t, todos: value, sessionId, diag } = props;
+      const diagNode = h('p', { className: 'dsh-todo-astale', style: { fontFamily: 'monospace', fontSize: '10px', overflowWrap: 'anywhere', margin: 0 } }, String(diag ?? ''));
       const current = Array.isArray(value);
-      // A completed live list also clears the retained copy.
       if (current && isAllDone(value)) forgetTodos(sessionId);
-      // Retain unfinished lists; fall back to the turn-start-retained copy.
       const todos = current ? value : rememberedTodos(sessionId);
       if (!Array.isArray(todos) || todos.length === 0) {
-        return Section(t('section.agent'), 'agent', h('p', { className: 'dsh-todo-hint' }, t('agent.empty')));
+        return Section(t('section.agent'), 'agent', h('p', { className: 'dsh-todo-hint' }, t('agent.empty')), diagNode);
       }
+      const rows = todos.map((item, index) => {
+        const cls = 'dsh-todo-atask'
+          + (item.status === 'completed' ? ' dsh-todo-acompleted' : '')
+          + (item.status === 'in_progress' ? ' dsh-todo-arunning' : '');
+        const glyphCls = 'dsh-todo-aglyph' + (item.status === 'in_progress' ? ' dsh-todo-aactive' : '');
+        return h('div', { key: String(index) + ':' + item.content, className: cls },
+          h('span', { className: glyphCls, 'aria-hidden': true }, AGENT_GLYPHS[item.status] ?? 'o'),
+          h('span', { className: 'dsh-todo-atext' }, item.content));
+      });
       return Section(t('section.agent'), 'agent',
-        !current ? h('p', { className: 'dsh-todo-astale' }, t('agent.stale')) : null,
-        todos.map((item, index) => h('div', {
-          key: `${index}:${item.content}`,
-          className: `dsh-todo-atask${item.status === 'completed' ? ' dsh-todo-acompleted' : ''}${item.status === 'in_progress' ? ' dsh-todo-arunning' : ''}`,
-        },
-        h('span', {
-          className: `dsh-todo-aglyph${item.status === 'in_progress' ? ' dsh-todo-aactive' : ''}`,
-          'aria-hidden': true,
-        }, AGENT_GLYPHS[item.status] ?? '○'),
-        h('span', { className: 'dsh-todo-atext' }, item.content))));
+        current ? null : h('p', { className: 'dsh-todo-astale' }, t('agent.stale')),
+        rows,
+        diagNode);
     }
 
     /**
@@ -631,6 +632,24 @@ window.__ModuleLoader__.load({
       };
       const todosProjection = readProjection('todos');
       rememberTodos(props.sessionId, todosProjection);
+      // Temporary field diagnostics: which data paths carry the task list.
+      const describe = (input) => {
+        if (input === undefined) return 'undef';
+        if (input === null) return 'null';
+        if (Array.isArray(input)) return `arr(${input.length})`;
+        return typeof input;
+      };
+      let standardProbe = 'absent';
+      if (useProjection !== null) {
+        try {
+          standardProbe = describe(useProjection('todos'));
+        } catch (probeFailed) {
+          standardProbe = 'throw:' + (probeFailed instanceof Error ? probeFailed.message : String(probeFailed));
+        }
+      }
+      const diagLine = `DIAG sid=${String(props.sessionId ?? 'none')} std=${standardProbe} `
+        + `cat=${describe(values?.todos)} mem=${describe(rememberedTodos(props.sessionId))} `
+        + `keys=${useValues === null ? 'no-useValues' : Object.keys(values ?? {}).slice(0, 6).join(',')}`;
       const goalProjection = readProjection('goal');
       const planProjection = readProjection('plan');
       const catalogProjection = readProjection('subagentCatalog');
@@ -646,7 +665,7 @@ window.__ModuleLoader__.load({
         renderTodoForm(t, local),
         h('div', { className: 'dsh-todo-sections' },
           Section(t('section.mine'), 'mine', renderTodoList(t, local.todos, local.toggle, local.remove)),
-          h(AgentSection, { t, todos: todosProjection, sessionId: props.sessionId }),
+          h(AgentSection, { t, todos: todosProjection, sessionId: props.sessionId, diag: diagLine }),
           h(SubagentsSection, { t, catalog: catalogProjection, readChildValues: (id) => sessionValuesOf(pluginCtx, id) }),
           h(GoalSection, { t, projection: goalProjection }),
           h(PlanSection, { t, plan: planProjection })));
