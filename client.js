@@ -167,7 +167,7 @@ window.__ModuleLoader__.load({
         '.dsh-todo-subagent{display:flex;flex-direction:column;gap:5px;border:1px dashed var(--dsw-alias-border-l1,rgba(127,127,127,.25));border-radius:9px;padding:7px 9px;min-width:0;}',
         '.dsh-todo-subagent-head{display:flex;align-items:center;gap:8px;margin:0;min-width:0;}',
         '.dsh-todo-subagent-name{flex:1;min-width:0;font-size:11.5px;font-weight:650;color:var(--dsw-alias-label-primary,inherit);overflow-wrap:anywhere;}',
-        '.dsh-todo-dock{--hero-a:#7c5cff;--hero-b:#19b8c4;border:1px solid color-mix(in srgb,var(--hero-a) 24%,var(--dsw-alias-border-l1,rgba(127,127,127,.2)));border-radius:12px;background:radial-gradient(circle at 8% 0%,color-mix(in srgb,var(--hero-a) 10%,transparent),transparent 46%),var(--dsw-alias-bg-layer-1,transparent);padding:8px 11px;display:flex;flex-direction:column;gap:5px;cursor:pointer;min-width:0;box-shadow:0 6px 20px color-mix(in srgb,var(--hero-a) 6%,transparent);transition:border-color .2s ease-in-out,box-shadow .2s ease-in-out;}',
+        '.dsh-todo-dock{--hero-a:#7c5cff;--hero-b:#19b8c4;box-sizing:border-box;width:100%;max-width:var(--dsh-composer-card-max-width,720px);margin:0 auto 6px;border:1px solid color-mix(in srgb,var(--hero-a) 24%,var(--dsw-alias-border-l1,rgba(127,127,127,.2)));border-radius:12px;background:radial-gradient(circle at 8% 0%,color-mix(in srgb,var(--hero-a) 10%,transparent),transparent 46%),var(--dsw-alias-bg-layer-1,transparent);padding:8px 11px;display:flex;flex-direction:column;gap:5px;cursor:pointer;min-width:0;box-shadow:0 6px 20px color-mix(in srgb,var(--hero-a) 6%,transparent);transition:border-color .2s ease-in-out,box-shadow .2s ease-in-out;}',
         '.dsh-todo-dock:hover,.dsh-todo-dock:focus-visible{border-color:color-mix(in srgb,var(--hero-a) 45%,var(--dsw-alias-border-l1,rgba(127,127,127,.2)));box-shadow:0 8px 26px color-mix(in srgb,var(--hero-a) 12%,transparent);outline:none;}',
         '.dsh-todo-dock-head{display:flex;align-items:center;gap:8px;min-width:0;}',
         '.dsh-todo-dock-title{font-size:11px;font-weight:700;letter-spacing:.04em;color:var(--hero-a);}',
@@ -423,7 +423,7 @@ window.__ModuleLoader__.load({
      * projection at every turn/start, so between turns we keep showing the
      * session's unfinished plan; a list whose items are all completed is
      * dropped (done lists clear, unfinished ones survive the turn boundary).
-     * sessionStorage keeps it across panel remounts AND page reloads.
+     * localStorage keeps it across panel remounts, reloads, and app restarts.
      */
     const lastTodosBySession = new Map();
     const LAST_TODOS_PREFIX = 'dsh-todo-panel.lastTodos.';
@@ -440,7 +440,7 @@ window.__ModuleLoader__.load({
       }
       lastTodosBySession.set(sessionId, todos);
       try {
-        sessionStorage.setItem(LAST_TODOS_PREFIX + sessionId, JSON.stringify(todos));
+        localStorage.setItem(LAST_TODOS_PREFIX + sessionId, JSON.stringify(todos));
       } catch (storageUnavailable) {
         // Memory copy still covers this page session.
       }
@@ -449,7 +449,7 @@ window.__ModuleLoader__.load({
     function forgetTodos(sessionId) {
       lastTodosBySession.delete(sessionId);
       try {
-        sessionStorage.removeItem(LAST_TODOS_PREFIX + sessionId);
+        localStorage.removeItem(LAST_TODOS_PREFIX + sessionId);
       } catch (storageUnavailable) {
         // Ignore.
       }
@@ -460,7 +460,7 @@ window.__ModuleLoader__.load({
       const held = lastTodosBySession.get(sessionId);
       if (held !== undefined) return held;
       try {
-        const raw = sessionStorage.getItem(LAST_TODOS_PREFIX + sessionId);
+        const raw = localStorage.getItem(LAST_TODOS_PREFIX + sessionId);
         if (raw === null) return null;
         const parsed = JSON.parse(raw);
         if (!Array.isArray(parsed) || parsed.length === 0 || isAllDone(parsed)) return null;
@@ -1307,6 +1307,9 @@ window.__ModuleLoader__.load({
               if (values === undefined || values === null || typeof values !== 'object') continue;
               const record = states.get(sessionId) ?? { goalPhase: undefined, planEffective: undefined, todosSeen: null, goalSeen: false };
               const todos = Array.isArray(values.todos) ? values.todos : null;
+              // Capture here too: this scan runs whether or not the panel is mounted,
+              // so the retained plan survives a closed panel and a fresh page.
+              rememberTodos(sessionId, todos);
               if (record.todosSeen === null) {
                 record.todosSeen = todos !== null;
               } else if (record.todosSeen === false && todos !== null && todos.length > 0) {
