@@ -121,6 +121,9 @@ window.__ModuleLoader__.load({
     /** A source that always reads undefined, for projections the seat cannot reach. */
     const NULL_SOURCE = { getSnapshot: () => undefined, subscribe: () => () => {} };
 
+    /** Identity selector: seat-wrapped store hooks read the whole snapshot with it. */
+    const identity = (value) => value;
+
     /** Whether one value can serve as an observable source. */
     function isSource(value) {
       return value !== undefined && value !== null
@@ -198,7 +201,7 @@ window.__ModuleLoader__.load({
      */
     function AgentSection(props) {
       const useTodos = props.useTodos;
-      const value = useTodos();
+      const value = useTodos(identity);
       const lastRef = React.useRef(null);
       React.useEffect(() => {
         if (Array.isArray(value) && value.length > 0) lastRef.current = value;
@@ -226,7 +229,7 @@ window.__ModuleLoader__.load({
     function GoalSection(props) {
       const useGoal = props.useGoal;
       const { t } = props;
-      const projection = useGoal();
+      const projection = useGoal(identity);
       const goal = projection === undefined || projection === null ? undefined : projection.goal;
       if (goal === undefined || goal.phase === 'complete') return null;
       const muted = goal.phase === 'paused';
@@ -242,7 +245,7 @@ window.__ModuleLoader__.load({
     function PlanSection(props) {
       const usePlan = props.usePlan;
       const { t } = props;
-      const plan = usePlan();
+      const plan = usePlan(identity);
       if (plan === undefined) return null;
       if (!(plan.pending ? !plan.active : plan.active)) return null;
       return Section(t('section.plan'),
