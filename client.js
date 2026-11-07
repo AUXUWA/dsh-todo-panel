@@ -504,8 +504,28 @@ window.__ModuleLoader__.load({
       const local = useLocalTodos();
       const { todos, doneCount } = local;
 
+      // The session standard kit provides `useProjection(key)` to every
+      // session-scoped seat (ui-session BUILTIN_SOURCE keyedHooks) — the same
+      // prop dsh-context's sidebar and the composer's todo dock read through.
+      const useProjection = typeof props.useProjection === 'function' ? props.useProjection : null;
       const useValues = pickHook(props, 'values');
       const values = useValues === null ? undefined : useValues(identity);
+      const path = useProjection !== null ? 'standard' : values !== undefined ? 'values' : 'none';
+      const readProjection = (key) => {
+        if (useProjection !== null) {
+          try {
+            return useProjection(key) ?? null;
+          } catch (projectionFailed) {
+            return null;
+          }
+        }
+        return values?.[key] ?? null;
+      };
+      const todosProjection = readProjection('todos');
+      const goalProjection = readProjection('goal');
+      const planProjection = readProjection('plan');
+      const catalogProjection = readProjection('subagentCatalog');
+      const debugLine = `DBG path=${path} todos=${todosProjection === null ? 'null' : Array.isArray(todosProjection) ? `arr(${todosProjection.length})` : typeof todosProjection}`;
 
       return h('div', { className: 'dsh-todo' },
         renderHero(t, 'panel.eyebrow', todos, doneCount,
@@ -517,11 +537,12 @@ window.__ModuleLoader__.load({
             : null),
         renderTodoForm(t, local),
         h('div', { className: 'dsh-todo-sections' },
+          h('p', { className: 'dsh-todo-astale' }, debugLine),
           Section(t('section.mine'), 'mine', renderTodoList(t, local.todos, local.toggle, local.remove)),
-          h(AgentSection, { t, todos: values?.todos ?? null }),
-          h(SubagentsSection, { t, catalog: values?.subagentCatalog ?? null, readChildValues: (id) => sessionValuesOf(pluginCtx, id) }),
-          h(GoalSection, { t, projection: values?.goal ?? null }),
-          h(PlanSection, { t, plan: values?.plan ?? null }),
+          h(AgentSection, { t, todos: todosProjection }),
+          h(SubagentsSection, { t, catalog: catalogProjection, readChildValues: (id) => sessionValuesOf(pluginCtx, id) }),
+          h(GoalSection, { t, projection: goalProjection }),
+          h(PlanSection, { t, plan: planProjection }),
           pluginSettings === null ? null : h('details', { className: 'dsh-todo-cfg-details' },
             h('summary', { className: 'dsh-todo-cfg-summary' }, t('settings.sectionTitle')),
             h('div', { className: 'dsh-todo-cfg-panel' }, h(ConfigForm, { t, settings: pluginSettings })))));
