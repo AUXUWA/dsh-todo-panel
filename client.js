@@ -418,26 +418,63 @@ window.__ModuleLoader__.load({
      */
     /**
      * Last non-empty task list per session. The harness clears the `todos`
-     * projection at every turn/start, so between turns the only way to keep
-     * showing the session's plan is to retain it here — module scope survives
-     * panel remounts and tab switches.
+     * projection at every turn/start, so between turns we keep showing the
+     * session's unfinished plan; a list whose items are all completed is
+     * dropped (done lists clear, unfinished ones survive the turn boundary).
+     * sessionStorage keeps it across panel remounts AND page reloads.
      */
     const lastTodosBySession = new Map();
+    const LAST_TODOS_PREFIX = 'dsh-todo-panel.lastTodos.';
+
+    function isAllDone(todos) {
+      return Array.isArray(todos) && todos.length > 0 && todos.every((item) => item?.status === 'completed');
+    }
 
     function rememberTodos(sessionId, todos) {
-      if (typeof sessionId === 'string' && sessionId !== '' && Array.isArray(todos) && todos.length > 0) {
-        lastTodosBySession.set(sessionId, todos);
+      if (typeof sessionId !== 'string' || sessionId === '' || !Array.isArray(todos) || todos.length === 0) return;
+      if (isAllDone(todos)) {
+        forgetTodos(sessionId);
+        return;
+      }
+      lastTodosBySession.set(sessionId, todos);
+      try {
+        sessionStorage.setItem(LAST_TODOS_PREFIX + sessionId, JSON.stringify(todos));
+      } catch (storageUnavailable) {
+        // Memory copy still covers this page session.
+      }
+    }
+
+    function forgetTodos(sessionId) {
+      lastTodosBySession.delete(sessionId);
+      try {
+        sessionStorage.removeItem(LAST_TODOS_PREFIX + sessionId);
+      } catch (storageUnavailable) {
+        // Ignore.
       }
     }
 
     function rememberedTodos(sessionId) {
-      return lastTodosBySession.get(sessionId) ?? null;
+      if (typeof sessionId !== 'string' || sessionId === '') return null;
+      const held = lastTodosBySession.get(sessionId);
+      if (held !== undefined) return held;
+      try {
+        const raw = sessionStorage.getItem(LAST_TODOS_PREFIX + sessionId);
+        if (raw === null) return null;
+        const parsed = JSON.parse(raw);
+        if (!Array.isArray(parsed) || parsed.length === 0 || isAllDone(parsed)) return null;
+        lastTodosBySession.set(sessionId, parsed);
+        return parsed;
+      } catch (storageUnavailable) {
+        return null;
+      }
     }
 
     function AgentSection(props) {
       const { t, todos: value, sessionId } = props;
       const current = Array.isArray(value);
-      // Retain the live list; fall back to the turn-start-retained copy.
+      // A completed live list also clears the retained copy.
+      if (current && isAllDone(value)) forgetTodos(sessionId);
+      // Retain unfinished lists; fall back to the turn-start-retained copy.
       const todos = current ? value : rememberedTodos(sessionId);
       if (!Array.isArray(todos) || todos.length === 0) {
         return Section(t('section.agent'), 'agent', h('p', { className: 'dsh-todo-hint' }, t('agent.empty')));
