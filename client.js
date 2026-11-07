@@ -34,9 +34,11 @@ window.__ModuleLoader__.load({
       tone: 'chime',
       customSoundUrl: '',
       showSessionView: true,
+      takeoverDocks: true,
+      autoOpen: true,
     };
     /** Config fields the settings form edits, in save order. */
-    const CONFIG_FIELDS = ['notifyGoalComplete', 'notifyPlanSubmitted', 'popupEnabled', 'soundEnabled', 'tone', 'customSoundUrl', 'showSessionView'];
+    const CONFIG_FIELDS = ['notifyGoalComplete', 'notifyPlanSubmitted', 'popupEnabled', 'soundEnabled', 'tone', 'customSoundUrl', 'showSessionView', 'takeoverDocks', 'autoOpen'];
     /** The left-rail entry and its main panel share this id. */
     const PANEL_ID = 'todo-panel';
 
@@ -530,6 +532,52 @@ window.__ModuleLoader__.load({
       return Section(t('section.subagents'), 'subagents', blocks);
     }
 
+    /**
+     * Composer dock takeover: one compact card above the message input with the
+     * session's task list and goal, shown while the takeover setting is on. The
+     * built-in todo/goal docks are hidden through the accompanying style tag.
+     */
+    function CompactDock(props) {
+      const { t } = props;
+      const useProjection = typeof props.useProjection === 'function' ? props.useProjection : null;
+      if (useProjection === null) return null;
+      const todos = useProjection('todos') ?? [];
+      const goalProjection = useProjection('goal');
+      const goal = goalProjection == null ? undefined : goalProjection.goal;
+      const openCount = todos.filter((item) => item?.status !== 'completed').length;
+      if (todos.length === 0 && goal === undefined) return null;
+      const open = () => {
+        try {
+          pluginCtx.sidebarRight.openTab(KIND);
+        } catch (openFailed) {
+          // The sidebar opens when a session surface is mounted; ignore otherwise.
+        }
+      };
+      return h('div', { className: 'dsh-todo-dock', onClick: open, role: 'button', tabIndex: 0 },
+        h('div', { className: 'dsh-todo-dock-head' },
+          h('span', { className: 'dsh-todo-dock-title' }, t('dock.title')),
+          h('span', { className: 'dsh-todo-dock-count' },
+            t('count').replace('{done}', String(todos.length - openCount)).replace('{total}', String(todos.length)))),
+        goal !== undefined
+          ? h('div', { className: 'dsh-todo-dock-goal' },
+            h('span', { className: `dsh-todo-badge${goal.phase === 'blocked' ? ' dsh-todo-badgeerror' : goal.phase === 'paused' ? ' dsh-todo-badgemuted' : ''}` },
+              t(`goal.phase.${goal.phase}`)),
+            h('span', { className: 'dsh-todo-dock-goal-text' }, goal.objective))
+          : null,
+        todos.length > 0
+          ? h('div', { className: 'dsh-todo-dock-rows' },
+            todos.map((item, index) => h('div', {
+              key: `${index}:${item?.content ?? index}`,
+              className: `dsh-todo-atask${item?.status === 'completed' ? ' dsh-todo-acompleted' : ''}${item?.status === 'in_progress' ? ' dsh-todo-arunning' : ''}`,
+            },
+            h('span', {
+              className: `dsh-todo-aglyph${item?.status === 'in_progress' ? ' dsh-todo-aactive' : ''}`,
+              'aria-hidden': true,
+            }, AGENT_GLYPHS[item?.status] ?? '○'),
+            h('span', { className: 'dsh-todo-atext' }, String(item?.content ?? '')))))
+          : null);
+    }
+
     /** The session goal (`goal` projection), read-only; hidden when absent or complete. */
     function GoalSection(props) {
       const { t, projection } = props;
@@ -573,9 +621,10 @@ window.__ModuleLoader__.load({
       const readProjection = (key) => {
         if (useProjection !== null) {
           try {
-            return useProjection(key) ?? null;
+            const projected = useProjection(key);
+            if (projected !== undefined) return projected;
           } catch (projectionFailed) {
-            return null;
+            // Fall through to the catalog source.
           }
         }
         return values?.[key] ?? null;
@@ -795,6 +844,20 @@ window.__ModuleLoader__.load({
               type: 'button', className: 'dsh-todo-cfg-btn',
               onClick: () => playSound({ tone: value.tone, customSoundUrl: value.customSoundUrl }, { last: 0 }),
             }, t('settings.test')))),
+        h('div', { className: 'dsh-todo-cfg-row' },
+          h('span', { className: 'dsh-todo-cfg-label' }, t('settings.takeoverDocks')),
+          h('input', {
+            type: 'checkbox', className: 'dsh-todo-cfg-check', disabled: readOnly,
+            checked: value.takeoverDocks !== false,
+            onChange: (event) => edit('takeoverDocks', event.target.checked),
+          })),
+        h('div', { className: 'dsh-todo-cfg-row' },
+          h('span', { className: 'dsh-todo-cfg-label' }, t('settings.autoOpen')),
+          h('input', {
+            type: 'checkbox', className: 'dsh-todo-cfg-check', disabled: readOnly,
+            checked: value.autoOpen !== false,
+            onChange: (event) => edit('autoOpen', event.target.checked),
+          })),
         h('div', { className: 'dsh-todo-cfg-row' },
           h('span', { className: 'dsh-todo-cfg-label' }, t('settings.showSessionView')),
           h('input', {
@@ -1071,6 +1134,9 @@ window.__ModuleLoader__.load({
             'settings.saving': '保存中…',
             'settings.saved': '已保存',
             'settings.showSessionView': '在会话视图显示“待办”',
+            'settings.takeoverDocks': '取消原生任务/目标卡并显示“任务与目标”卡',
+            'settings.autoOpen': '任务创建或目标设置时自动展开右侧栏',
+            'dock.title': '任务与目标',
             'settings.takeoverDocks': '接管输入框上方的任务/目标卡片',
             'settings.autoOpen': '任务创建或目标设置时自动展开右侧栏',
             'dock.title': '任务与目标',
@@ -1131,6 +1197,9 @@ window.__ModuleLoader__.load({
             'settings.saving': 'Saving…',
             'settings.saved': 'Saved',
             'settings.showSessionView': 'Show Todos as a session view',
+            'settings.takeoverDocks': 'Replace the native task/goal cards with our Tasks & goal card',
+            'settings.autoOpen': 'Open the sidebar when a task or goal appears',
+            'dock.title': 'Tasks & goal',
             'settings.takeoverDocks': 'Take over the composer task/goal cards',
             'settings.autoOpen': 'Open the sidebar when a task or goal appears',
             'dock.title': 'Tasks & goal',
@@ -1350,6 +1419,50 @@ window.__ModuleLoader__.load({
             if (disposeView !== undefined) disposeView();
           };
         }, 'todo panel: session view');
+        ctx.effect(() => {
+          let disposeDock;
+          let hideTag;
+          const sync = () => {
+            let enabled = true;
+            try {
+              enabled = pluginSettings !== null && pluginSettings.read().value.takeoverDocks !== false;
+            } catch (unreadableSettings) {
+              enabled = true;
+            }
+            try {
+              if (enabled && disposeDock === undefined) {
+                disposeDock = ctx.slots.inject('conversation.input.dock', () => ctx.slots.register({
+                  name: 'conversation.input.dock',
+                  id: PANEL_ID,
+                  order: 0,
+                  locale: NS,
+                }, (props) => h(PanelBoundary, null, h(CompactDock, props))));
+              } else if (!enabled && disposeDock !== undefined) {
+                disposeDock();
+                disposeDock = undefined;
+              }
+              if (enabled && typeof document !== 'undefined' && hideTag === undefined) {
+                hideTag = document.createElement('style');
+                hideTag.dataset.plugin = PLUGIN_ID;
+                hideTag.dataset.pluginCss = '@auxuwa/dsh-todo-panel/dock-takeover';
+                hideTag.textContent = '[data-goal-bar]{display:none!important}[data-testid="todo-panel"]{display:none!important}';
+                document.head.appendChild(hideTag);
+              } else if (!enabled && hideTag !== undefined) {
+                hideTag.remove();
+                hideTag = undefined;
+              }
+            } catch (dockSyncFailed) {
+              console.error('[dsh-todo-panel] dock takeover sync failed:', dockSyncFailed);
+            }
+          };
+          const offSettings = pluginSettings === null ? () => {} : pluginSettings.subscribe(sync);
+          sync();
+          return () => {
+            offSettings();
+            if (disposeDock !== undefined) disposeDock();
+            if (hideTag !== undefined) hideTag.remove();
+          };
+        }, 'todo panel: dock takeover');
       },
     };
   },
