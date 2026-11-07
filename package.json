@@ -1,0 +1,32 @@
+{
+  "name": "@auxuwa/dsh-todo-panel",
+  "version": "1.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Right-sidebar todo overview panel for the dsh web client: agent task list, goal, plan mode, personal todos, and notifications",
+  "author": "AUXUWA <xuaoxe@qq.com>",
+  "license": "MIT",
+  "keywords": ["dsh", "deepseek-harness", "plugin", "todo", "sidebar"],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/AUXUWA/dsh-todo-panel.git"
+  },
+  "exports": {
+    ".": "./index.js",
+    "./client": "./client.js",
+    "./locale/*.json": "./locale/*.json",
+    "./icon": "./icon.svg"
+  },
+  "files": ["index.js", "client.js", "cordis.patch.yml", "locale/*.json", "icon.svg"],
+  "dsh": {
+    "bundle": { "patch": "./cordis.patch.yml" },
+    "client": {
+      "platform": "web",
+      "immediately": true,
+      "inject": ["@deepseek-ai/dsh-client-ui-sidebar-right", "@deepseek-ai/dsh-client-locale", "@deepseek-ai/dsh-client-ui-session", "@deepseek-ai/dsh-api-session-controller", "@deepseek-ai/dsh-client-ui-settings"]
+    }
+  },
+  "dependencies": {
+    "@deepseek-ai/schemastery": "~3.19.0"
+  }
+}
