@@ -1376,7 +1376,7 @@ window.__ModuleLoader__.load({
                   id: PANEL_ID,
                   order: 0,
                   locale: NS,
-                }, CompactDock));
+                }, (props) => h(PanelBoundary, null, h(CompactDock, props))));
               } else if (!enabled && disposeDock !== undefined) {
                 disposeDock();
                 disposeDock = undefined;
