@@ -83,6 +83,9 @@ window.__ModuleLoader__.load({
         '.dsh-todo-cfg-btn:hover:not(:disabled){background:color-mix(in srgb,var(--dsw-alias-state-business-tertiary,rgba(36,123,191,.16)),var(--dsw-alias-state-business-primary,#247bbf) 10%);}',
         '.dsh-todo-cfg-btn:disabled{opacity:.55;cursor:default;}',
         '.dsh-todo-cfg-saved{font-size:12px;color:var(--dsw-alias-label-tertiary,rgba(127,127,127,.7));}',
+        '.dsh-todo-boundary{box-sizing:border-box;padding:12px;font-size:13px;line-height:20px;}',
+        '.dsh-todo-boundary-title{margin:0 0 6px;font-weight:600;color:var(--dsw-alias-state-error-primary,#d05050);}',
+        '.dsh-todo-boundary-detail{margin:0;padding:8px;font-size:11px;line-height:16px;white-space:pre-wrap;overflow-wrap:anywhere;color:var(--dsw-alias-label-secondary,inherit);background:var(--dsw-alias-interactive-bg-hover,rgba(127,127,127,.1));border-radius:8px;}',
       ].join('\n');
       document.head.appendChild(tag);
     })();
@@ -115,13 +118,54 @@ window.__ModuleLoader__.load({
       return () => React.useSyncExternalStore(source.subscribe, source.getSnapshot);
     }
 
-    /** Accept the framework's `use<Key>` prop or a raw `hooks.<key>` source, whichever arrives. */
+    /** A source that always reads undefined, for projections the seat cannot reach. */
+    const NULL_SOURCE = { getSnapshot: () => undefined, subscribe: () => () => {} };
+
+    /** Whether one value can serve as an observable source. */
+    function isSource(value) {
+      return value !== undefined && value !== null
+        && typeof value.getSnapshot === 'function' && typeof value.subscribe === 'function';
+    }
+
+    /**
+     * Accept whichever hook shape the seat provides: a ready-made `use<Key>`
+     * function, a source object under that prop, a hook factory or a source
+     * object under `hooks.<key>`.
+     */
     function pickHook(props, name) {
       const direct = props[`use${name[0].toUpperCase()}${name.slice(1)}`];
       if (typeof direct === 'function') return direct;
+      if (isSource(direct)) return sourceHook(direct);
       const source = props.hooks?.[name];
-      if (source !== undefined && typeof source.getSnapshot === 'function') return sourceHook(source);
+      if (typeof source === 'function') return source;
+      if (isSource(source)) return sourceHook(source);
       return null;
+    }
+
+    /**
+     * Render guard: a thrown panel body shows its error inline (and in the
+     * console) instead of leaving the sidebar pane silently blank.
+     */
+    class PanelBoundary extends React.Component {
+      constructor(props) {
+        super(props);
+        this.state = { error: null };
+      }
+      static getDerivedStateFromError(error) {
+        return { error };
+      }
+      componentDidCatch(error) {
+        console.error('[dsh-todo-panel] panel render failed:', error);
+      }
+      render() {
+        if (this.state.error !== null) {
+          const detail = this.state.error instanceof Error ? this.state.error.message : String(this.state.error);
+          return h('div', { className: 'dsh-todo-boundary' },
+            h('p', { className: 'dsh-todo-boundary-title' }, '待办面板渲染出错 / Panel render error'),
+            h('pre', { className: 'dsh-todo-boundary-detail' }, detail));
+        }
+        return this.props.children;
+      }
     }
 
     /** Guide capsule artwork: echoes the package icon — white checkbox, deep-blue check. */
@@ -647,22 +691,27 @@ window.__ModuleLoader__.load({
           key: PLUGIN_ID,
           locale: NS,
           inject: (sessionId) => {
-            const binding = ctx.sessions.binding(sessionId);
-            const projections = binding?.session.projections;
-            const source = (key) => {
-              if (projections === undefined || projections === null) return undefined;
-              const face = projections.faceOf(key);
-              if (face === undefined || typeof face.getSnapshot !== 'function') return undefined;
-              return {
-                getSnapshot: () => face.getSnapshot(),
-                subscribe: (listener) => face.subscribe(listener),
-              };
-            };
             const hooks = {};
-            for (const key of PROJECTION_KEYS) hooks[key] = source(key);
+            for (const key of PROJECTION_KEYS) hooks[key] = NULL_SOURCE;
+            try {
+              const projections = ctx.sessions.binding(sessionId)?.session?.projections;
+              if (projections === undefined || projections === null) return { hooks };
+              for (const key of PROJECTION_KEYS) {
+                try {
+                  const face = typeof projections.faceOf === 'function' ? projections.faceOf(key) : undefined;
+                  hooks[key] = isSource(face)
+                    ? { getSnapshot: () => face.getSnapshot(), subscribe: (listener) => face.subscribe(listener) }
+                    : NULL_SOURCE;
+                } catch (unreadableFace) {
+                  hooks[key] = NULL_SOURCE;
+                }
+              }
+            } catch (unavailableSession) {
+              // Leave every hook at the null source; sections hide themselves.
+            }
             return { hooks };
           },
-        }, TodoBody)), 'todo panel: tab body');
+        }, (props) => h(PanelBoundary, null, h(TodoBody, props)))), 'todo panel: tab body');
         ctx.effect(() => ctx.slots.inject('plugins.bundle.config', () => ctx.slots.register({
           name: 'plugins.bundle.config',
           key: PLUGIN_ID,
