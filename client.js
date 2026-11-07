@@ -408,7 +408,7 @@ window.__ModuleLoader__.load({
     }
 
     /** One overview card: small title row with a colored dot plus children. */
-    function Section(title, mod, children) {
+    function Section(title, mod, ...children) {
       return h('div', { className: `dsh-todo-section dsh-todo-c-${mod}` },
         h('p', { className: 'dsh-todo-sectitle' }, title),
         children);
