@@ -649,10 +649,7 @@ window.__ModuleLoader__.load({
           h(AgentSection, { t, todos: todosProjection, sessionId: props.sessionId }),
           h(SubagentsSection, { t, catalog: catalogProjection, readChildValues: (id) => sessionValuesOf(pluginCtx, id) }),
           h(GoalSection, { t, projection: goalProjection }),
-          h(PlanSection, { t, plan: planProjection }),
-          pluginSettings === null ? null : h('details', { className: 'dsh-todo-cfg-details' },
-            h('summary', { className: 'dsh-todo-cfg-summary' }, t('settings.sectionTitle')),
-            h('div', { className: 'dsh-todo-cfg-panel' }, h(ConfigForm, { t, settings: pluginSettings })))));
+          h(PlanSection, { t, plan: planProjection })));
     }
 
     // ---------------------------------------------------------------------------
@@ -1055,10 +1052,7 @@ window.__ModuleLoader__.load({
                 : null),
             renderTodoForm(translate, local),
             h('div', { className: 'dsh-todo-sections' },
-              Section(translate('section.mine'), 'mine', renderTodoList(translate, local.todos, local.toggle, local.remove)),
-              pluginSettings === null ? null : h('details', { className: 'dsh-todo-cfg-details' },
-                h('summary', { className: 'dsh-todo-cfg-summary' }, translate('settings.sectionTitle')),
-                h('div', { className: 'dsh-todo-cfg-panel' }, h(ConfigForm, { t: translate, settings: pluginSettings })))))));
+              Section(translate('section.mine'), 'mine', renderTodoList(translate, local.todos, local.toggle, local.remove))))));
     }
 
     /** The shell overlay toast for one notification, drawn with the product's Toast. */
