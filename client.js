@@ -511,7 +511,7 @@ window.__ModuleLoader__.load({
           const open = expanded[item.id] === true;
           return h('li', { key: item.id, className: 'dsh-todo-group' },
             h('div', { className: 'dsh-todo-item' + (item.done ? ' dsh-todo-done' : '') },
-            steps.length > 0 ? h('button', {
+            steps.length > 0 || open ? h('button', {
               type: 'button',
               className: 'dsh-todo-caret' + (open ? ' dsh-todo-caret-open' : ''),
               'aria-label': t(open ? 'steps.collapse' : 'steps.expand'),
