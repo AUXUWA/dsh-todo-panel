@@ -171,6 +171,23 @@ window.__ModuleLoader__.load({
         '.dsh-todo-subagent{display:flex;flex-direction:column;gap:5px;border:1px dashed var(--dsw-alias-border-l1,rgba(127,127,127,.25));border-radius:9px;padding:7px 9px;min-width:0;}',
         '.dsh-todo-subagent-head{display:flex;align-items:center;gap:8px;margin:0;min-width:0;}',
         '.dsh-todo-subagent-name{flex:1;min-width:0;font-size:11.5px;font-weight:650;color:var(--dsw-alias-label-primary,inherit);overflow-wrap:anywhere;}',
+        '.dsh-todo-caret{border:none;background:none;color:var(--dsw-alias-label-tertiary,rgba(127,127,127,.7));cursor:pointer;padding:0;width:14px;height:14px;flex:none;display:inline-flex;align-items:center;justify-content:center;font-size:10px;line-height:1;transition:transform .12s,color .12s;}',
+        '.dsh-todo-caret:hover{color:var(--dsw-alias-label-primary,inherit);}',
+        '.dsh-todo-caret-open{transform:rotate(90deg);}',
+        '.dsh-todo-addstep{border:none;background:none;color:var(--dsw-alias-label-tertiary,rgba(127,127,127,.7));cursor:pointer;opacity:0;font-size:13px;line-height:1;padding:2px 4px;flex:none;transition:opacity .15s,color .15s;}',
+        '.dsh-todo-item:hover .dsh-todo-addstep,.dsh-todo-addstep:focus-visible{opacity:.8;}',
+        '.dsh-todo-addstep:hover{opacity:1;color:var(--dsw-alias-label-primary,inherit);}',
+        '.dsh-todo-stepcount{flex:none;font-size:10px;color:var(--dsw-alias-label-tertiary,rgba(127,127,127,.7));font-variant-numeric:tabular-nums;}',
+        '.dsh-todo-steps{margin:2px 0 0 22px;display:flex;flex-direction:column;gap:2px;border-left:2px solid var(--dsw-alias-border-l1,rgba(127,127,127,.18));padding-left:10px;}',
+        '.dsh-todo-step{display:flex;align-items:center;gap:7px;padding:2px 4px;border-radius:6px;}',
+        '.dsh-todo-step .dsh-todo-text{font-size:12.5px;}',
+        '.dsh-todo-stepcheck{width:13px;height:13px;}',
+        '.dsh-todo-stepform{display:flex;gap:5px;margin-top:3px;}',
+        '.dsh-todo-stepinput{padding:4px 9px;font-size:12px;border-radius:7px;}',
+        '.dsh-todo-stepadd{padding:0 10px;font-size:12px;border-radius:7px;}',
+        '.dsh-todo-sec-empty{padding:6px 12px;gap:0;}',
+        '.dsh-todo-sec-empty .dsh-todo-sectitle:before{display:none;}',
+        '.dsh-todo-sec-hint{margin-left:auto;font-size:11px;color:var(--dsw-alias-label-tertiary,rgba(127,127,127,.7));}',
         '.dsh-todo-dock{--hero-a:#7c5cff;--hero-b:#19b8c4;box-sizing:border-box;width:100%;max-width:var(--dsh-composer-card-max-width,720px);margin:0 auto 6px;border:1px solid color-mix(in srgb,var(--hero-a) 24%,var(--dsw-alias-border-l1,rgba(127,127,127,.2)));border-radius:12px;background:radial-gradient(circle at 8% 0%,color-mix(in srgb,var(--hero-a) 10%,transparent),transparent 46%),var(--dsw-alias-bg-layer-1,transparent);padding:8px 11px;display:flex;flex-direction:column;gap:5px;cursor:pointer;min-width:0;box-shadow:0 6px 20px color-mix(in srgb,var(--hero-a) 6%,transparent);transition:border-color .2s ease-in-out,box-shadow .2s ease-in-out;}',
         '.dsh-todo-dock:hover,.dsh-todo-dock:focus-visible{border-color:color-mix(in srgb,var(--hero-a) 45%,var(--dsw-alias-border-l1,rgba(127,127,127,.2)));box-shadow:0 8px 26px color-mix(in srgb,var(--hero-a) 12%,transparent);outline:none;}',
         '.dsh-todo-dock-head{display:flex;align-items:center;gap:8px;min-width:0;}',
@@ -494,13 +511,13 @@ window.__ModuleLoader__.load({
           const open = expanded[item.id] === true;
           return h('li', { key: item.id, className: 'dsh-todo-group' },
             h('div', { className: 'dsh-todo-item' + (item.done ? ' dsh-todo-done' : '') },
-            h('button', {
+            steps.length > 0 ? h('button', {
               type: 'button',
               className: 'dsh-todo-caret' + (open ? ' dsh-todo-caret-open' : ''),
               'aria-label': t(open ? 'steps.collapse' : 'steps.expand'),
               title: t(open ? 'steps.collapse' : 'steps.expand'),
               onClick: () => toggleOpen(item.id),
-            }, open ? '▾' : '▸'),
+            }, open ? '▾' : '▸') : null,
             h('input', {
               className: 'dsh-todo-check', type: 'checkbox', checked: item.done,
               'aria-label': t('toggle'),
@@ -510,6 +527,11 @@ window.__ModuleLoader__.load({
             steps.length > 0
               ? h('span', { className: 'dsh-todo-stepcount' }, stepsDone + '/' + steps.length)
               : null,
+            steps.length === 0 && !open ? h('button', {
+              type: 'button', className: 'dsh-todo-addstep',
+              'aria-label': t('steps.add'), title: t('steps.add'),
+              onClick: () => toggleOpen(item.id),
+            }, '+') : null,
             h('button', {
               type: 'button', className: 'dsh-todo-remove',
               'aria-label': t('remove'), title: t('remove'),
@@ -568,41 +590,45 @@ window.__ModuleLoader__.load({
         setDraft('');
       };
       const items = plan.items;
-      return Section(t('section.daily'), 'daily',
-        h('div', { className: 'dsh-todo-dailyhead' },
-        h('span', { className: 'dsh-todo-hint' }, t('daily.day').replace('{day}', plan.day)),
-        plan.doneCount > 0
-          ? h('button', {
-            type: 'button', className: 'dsh-todo-clear',
-            onClick: plan.clearDone,
-          }, t('clearDone'))
-          : null),
+      const slim = items.length === 0;
+      const body = h(React.Fragment, null,
+        slim ? null : h('div', { className: 'dsh-todo-dailyhead' },
+          h('span', { className: 'dsh-todo-hint' }, t('daily.day').replace('{day}', plan.day)),
+          plan.doneCount > 0
+            ? h('button', {
+              type: 'button', className: 'dsh-todo-clear',
+              onClick: plan.clearDone,
+            }, t('clearDone'))
+            : null),
         h('form', { className: 'dsh-todo-form', onSubmit: submit },
-        h('input', {
-          className: 'dsh-todo-input', type: 'text', value: draft,
-          placeholder: t('daily.placeholder'), 'aria-label': t('daily.placeholder'),
-          onChange: (event) => setDraft(event.target.value),
-        }),
-        h('button', { type: 'submit', className: 'dsh-todo-add' }, t('add'))),
-        items.length === 0
-          ? h('p', { className: 'dsh-todo-empty' }, t('daily.empty'))
-          : h('ul', { className: 'dsh-todo-list' },
-            items.map((item) => h('li', {
-              key: item.id,
-              className: 'dsh-todo-item' + (item.done ? ' dsh-todo-done' : ''),
-            },
-            h('input', {
-              className: 'dsh-todo-check', type: 'checkbox', checked: item.done,
-              'aria-label': t('toggle'),
-              onChange: () => plan.toggle(item.id),
-            }),
-            h('span', { className: 'dsh-todo-text', onClick: () => plan.toggle(item.id) }, item.text),
-            h('button', {
-              type: 'button', className: 'dsh-todo-remove',
-              'aria-label': t('remove'), title: t('remove'),
-              onClick: () => plan.remove(item.id),
-            }, '✕')))),
-        h('p', { className: 'dsh-todo-hint' }, t('daily.rollover')));
+          h('input', {
+            className: 'dsh-todo-input', type: 'text', value: draft,
+            placeholder: t('daily.placeholder'), 'aria-label': t('daily.placeholder'),
+            onChange: (event) => setDraft(event.target.value),
+          }),
+          h('button', { type: 'submit', className: 'dsh-todo-add' }, t('add'))),
+        slim
+          ? null
+          : items.length === 0
+            ? h('p', { className: 'dsh-todo-empty' }, t('daily.empty'))
+            : h('ul', { className: 'dsh-todo-list' },
+              items.map((item) => h('li', {
+                key: item.id,
+                className: 'dsh-todo-item' + (item.done ? ' dsh-todo-done' : ''),
+              },
+              h('input', {
+                className: 'dsh-todo-check', type: 'checkbox', checked: item.done,
+                'aria-label': t('toggle'),
+                onChange: () => plan.toggle(item.id),
+              }),
+              h('span', { className: 'dsh-todo-text', onClick: () => plan.toggle(item.id) }, item.text),
+              h('button', {
+                type: 'button', className: 'dsh-todo-remove',
+                'aria-label': t('remove'), title: t('remove'),
+                onClick: () => plan.remove(item.id),
+              }, '✕')))),
+        slim ? h('p', { className: 'dsh-todo-hint' }, t('daily.rollover')) : null);
+      return body;
     }
 
     /** The add-todo input row. */
@@ -642,6 +668,13 @@ window.__ModuleLoader__.load({
     }
 
     /** One overview card: small title row with a colored dot plus children. */
+    /** The collapsed form of a section with nothing to show. */
+    function SectionSlim(title, mod, hintText) {
+      return h('div', { className: `dsh-todo-section dsh-todo-c-${mod} dsh-todo-sec-empty` },
+        h('p', { className: 'dsh-todo-sectitle' }, title),
+        h('span', { className: 'dsh-todo-sec-hint' }, hintText));
+    }
+
     function Section(title, mod, ...children) {
       return h('div', { className: `dsh-todo-section dsh-todo-c-${mod}` },
         h('p', { className: 'dsh-todo-sectitle' }, title),
@@ -711,7 +744,7 @@ window.__ModuleLoader__.load({
       if (current && isAllDone(value)) forgetTodos(sessionId);
       const todos = current ? value : rememberedTodos(sessionId);
       if (!Array.isArray(todos) || todos.length === 0) {
-        return Section(t('section.agent'), 'agent', h('p', { className: 'dsh-todo-hint' }, t('agent.empty')));
+        return SectionSlim(t('section.agent'), 'agent', t('agent.empty'));
       }
       const rows = todos.map((item, index) => {
         const cls = 'dsh-todo-atask'
@@ -1305,7 +1338,7 @@ window.__ModuleLoader__.load({
                 : null),
             renderTodoForm(translate, local),
             h('div', { className: 'dsh-todo-sections' },
-              Section(translate('section.mine'), 'mine', h(TodoList, {
+              local.todos.length === 0 ? SectionSlim(translate('section.mine'), 'mine', translate('empty')) : Section(translate('section.mine'), 'mine', h(TodoList, {
                 t: translate,
                 todos: local.todos,
                 toggle: local.toggle,
