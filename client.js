@@ -21,6 +21,9 @@ window.__ModuleLoader__.load({
     const NS = 'todoPanel';
     /** Browser-local persistence; the sidebar layout is per session, this list is not. */
     const STORAGE_KEY = 'dsh.todoPanel.v1';
+    const DAILY_PLAN_KEY = 'dsh-todo-panel.dailyPlan.v1';
+    /** The daily plan rolls over at 08:00 local time. */
+    const DAILY_ROLLOVER_HOUR = 8;
     /** The Host entry id whose settings document section this bundle reads and writes. */
     const ENTRY_ID = 'todo-panel';
     /** localStorage fallback when the settings document does not serve this entry. */
@@ -36,9 +39,10 @@ window.__ModuleLoader__.load({
       showSessionView: true,
       composerCards: 'panel',
       autoOpen: true,
+      showDaily: true,
     };
     /** Config fields the settings form edits, in save order. */
-    const CONFIG_FIELDS = ['notifyGoalComplete', 'notifyPlanSubmitted', 'popupEnabled', 'soundEnabled', 'tone', 'customSoundUrl', 'showSessionView', 'composerCards', 'autoOpen'];
+    const CONFIG_FIELDS = ['notifyGoalComplete', 'notifyPlanSubmitted', 'popupEnabled', 'soundEnabled', 'tone', 'customSoundUrl', 'showSessionView', 'composerCards', 'autoOpen', 'showDaily'];
     /** The left-rail entry and its main panel share this id. */
     const PANEL_ID = 'todo-panel';
 
@@ -184,6 +188,19 @@ window.__ModuleLoader__.load({
       document.head.appendChild(tag);
     })();
 
+    /** One generated row id. */
+    function rowId() {
+      return Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 8);
+    }
+
+    /** Normalize one stored step list. */
+    function normalizeSteps(raw) {
+      if (!Array.isArray(raw)) return [];
+      return raw
+        .filter((step) => step !== null && typeof step === 'object' && typeof step.text === 'string')
+        .map((step) => ({ id: String(step.id ?? ''), text: step.text, done: step.done === true }));
+    }
+
     function loadTodos() {
       try {
         const raw = localStorage.getItem(STORAGE_KEY);
@@ -192,7 +209,12 @@ window.__ModuleLoader__.load({
         if (!Array.isArray(parsed)) return [];
         return parsed
           .filter((item) => item !== null && typeof item === 'object' && typeof item.text === 'string')
-          .map((item) => ({ id: String(item.id ?? ''), text: item.text, done: item.done === true }));
+          .map((item) => ({
+            id: String(item.id ?? ''),
+            text: item.text,
+            done: item.done === true,
+            steps: normalizeSteps(item.steps),
+          }));
       } catch (storageUnavailable) {
         return [];
       }
@@ -321,6 +343,10 @@ window.__ModuleLoader__.load({
         saveTodos(todos);
       }, [todos]);
       const doneCount = todos.reduce((sum, item) => (item.done ? sum + 1 : sum), 0);
+      const patchItem = (id, patch) => setTodos(todos.map((row) => (row.id === id ? { ...row, ...patch } : row)));
+      const patchStep = (id, stepId, patch) => setTodos(todos.map((row) => (row.id === id
+        ? { ...row, steps: row.steps.map((step) => (step.id === stepId ? { ...step, ...patch } : step)) }
+        : row)));
       return {
         todos,
         draft,
@@ -330,15 +356,17 @@ window.__ModuleLoader__.load({
         add() {
           const text = draft.trim();
           if (text === '') return;
-          setTodos(todos.concat({
-            id: `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`,
-            text,
-            done: false,
-          }));
+          setTodos(todos.concat({ id: rowId(), text, done: false, steps: [] }));
           setDraft('');
         },
         toggle(id) {
-          setTodos(todos.map((row) => (row.id === id ? { ...row, done: !row.done } : row)));
+          const target = todos.find((row) => row.id === id);
+          if (target === undefined) return;
+          // Completing a parent completes its steps; reopening clears that.
+          const done = !target.done;
+          setTodos(todos.map((row) => (row.id === id
+            ? { ...row, done, steps: row.steps.map((step) => ({ ...step, done })) }
+            : row)));
         },
         remove(id) {
           setTodos(todos.filter((row) => row.id !== id));
@@ -346,29 +374,235 @@ window.__ModuleLoader__.load({
         clearDone() {
           setTodos(todos.filter((row) => !row.done));
         },
+        addStep(id, text) {
+          const value = String(text ?? '').trim();
+          if (value === '') return;
+          setTodos(todos.map((row) => (row.id === id
+            ? { ...row, steps: row.steps.concat({ id: rowId(), text: value, done: false }) }
+            : row)));
+        },
+        toggleStep(id, stepId) {
+          const parent = todos.find((row) => row.id === id);
+          const step = parent?.steps.find((entry) => entry.id === stepId);
+          if (step === undefined) return;
+          patchStep(id, stepId, { done: !step.done });
+        },
+        removeStep(id, stepId) {
+          setTodos(todos.map((row) => (row.id === id
+            ? { ...row, steps: row.steps.filter((step) => step.id !== stepId) }
+            : row)));
+        },
       };
     }
 
-    /** The editable todo list, or the empty hint. */
-    function renderTodoList(t, todos, toggle, remove) {
+    /** The plan day a moment belongs to: the day starts at 08:00 local time. */
+    function planDayOf(when) {
+      const day = new Date(when);
+      if (day.getHours() < DAILY_ROLLOVER_HOUR) day.setDate(day.getDate() - 1);
+      const pad = (value) => String(value).padStart(2, '0');
+      return day.getFullYear() + '-' + pad(day.getMonth() + 1) + '-' + pad(day.getDate());
+    }
+
+    /** Read the stored daily plan, discarding it once its day has rolled over. */
+    function loadDailyPlan() {
+      const day = planDayOf(new Date());
+      try {
+        const raw = JSON.parse(localStorage.getItem(DAILY_PLAN_KEY));
+        if (raw !== null && typeof raw === 'object' && raw.day === day && Array.isArray(raw.items)) {
+          return { day, items: normalizeSteps(raw.items) };
+        }
+      } catch (storageUnavailable) {
+        // Fall through to a fresh plan.
+      }
+      return { day, items: [] };
+    }
+
+    function saveDailyPlan(plan) {
+      try {
+        localStorage.setItem(DAILY_PLAN_KEY, JSON.stringify(plan));
+      } catch (storageUnavailable) {
+        // Keep the plan usable in memory.
+      }
+    }
+
+    /** Daily plan state with an 08:00 rollover that clears the list. */
+    function useDailyPlan() {
+      const [plan, setPlan] = React.useState(loadDailyPlan);
+      const [draft, setDraft] = React.useState('');
+      React.useEffect(() => {
+        saveDailyPlan(plan);
+      }, [plan]);
+      React.useEffect(() => {
+        const tick = () => {
+          const day = planDayOf(new Date());
+          setPlan((previous) => (previous.day === day ? previous : { day, items: [] }));
+        };
+        const timer = setInterval(tick, 30000);
+        const onVisible = () => {
+          if (typeof document !== 'undefined' && document.visibilityState === 'visible') tick();
+        };
+        if (typeof document !== 'undefined') document.addEventListener('visibilitychange', onVisible);
+        tick();
+        return () => {
+          clearInterval(timer);
+          if (typeof document !== 'undefined') document.removeEventListener('visibilitychange', onVisible);
+        };
+      }, []);
+      const doneCount = plan.items.reduce((sum, item) => (item.done ? sum + 1 : sum), 0);
+      return {
+        day: plan.day,
+        items: plan.items,
+        draft,
+        setDraft,
+        doneCount,
+        add() {
+          const text = draft.trim();
+          if (text === '') return;
+          setPlan((previous) => ({ ...previous, items: previous.items.concat({ id: rowId(), text, done: false }) }));
+          setDraft('');
+        },
+        toggle(id) {
+          setPlan((previous) => ({
+            ...previous,
+            items: previous.items.map((item) => (item.id === id ? { ...item, done: !item.done } : item)),
+          }));
+        },
+        remove(id) {
+          setPlan((previous) => ({ ...previous, items: previous.items.filter((item) => item.id !== id) }));
+        },
+        clearDone() {
+          setPlan((previous) => ({ ...previous, items: previous.items.filter((item) => !item.done) }));
+        },
+      };
+    }
+
+    /**
+     * The editable todo list: each row may expand into its own steps, so one
+     * todo can carry the concrete sub-tasks that finish it.
+     */
+    function TodoList(props) {
+      const { t, todos, toggle, remove, addStep, toggleStep, removeStep } = props;
+      const [expanded, setExpanded] = React.useState({});
       if (todos.length === 0) {
         return h('p', { className: 'dsh-todo-empty' }, t('empty'));
       }
+      const toggleOpen = (id) => setExpanded((previous) => ({ ...previous, [id]: previous[id] !== true }));
       return h('ul', { className: 'dsh-todo-list' },
-        todos.map((item) => h('li', {
-          key: item.id, className: `dsh-todo-item${item.done ? ' dsh-todo-done' : ''}`,
+        todos.map((item) => {
+          const steps = Array.isArray(item.steps) ? item.steps : [];
+          const stepsDone = steps.reduce((sum, step) => (step.done ? sum + 1 : sum), 0);
+          const open = expanded[item.id] === true;
+          return h('li', { key: item.id, className: 'dsh-todo-group' },
+            h('div', { className: 'dsh-todo-item' + (item.done ? ' dsh-todo-done' : '') },
+            h('button', {
+              type: 'button',
+              className: 'dsh-todo-caret' + (open ? ' dsh-todo-caret-open' : ''),
+              'aria-label': t(open ? 'steps.collapse' : 'steps.expand'),
+              title: t(open ? 'steps.collapse' : 'steps.expand'),
+              onClick: () => toggleOpen(item.id),
+            }, open ? '▾' : '▸'),
+            h('input', {
+              className: 'dsh-todo-check', type: 'checkbox', checked: item.done,
+              'aria-label': t('toggle'),
+              onChange: () => toggle(item.id),
+            }),
+            h('span', { className: 'dsh-todo-text', onClick: () => toggle(item.id) }, item.text),
+            steps.length > 0
+              ? h('span', { className: 'dsh-todo-stepcount' }, stepsDone + '/' + steps.length)
+              : null,
+            h('button', {
+              type: 'button', className: 'dsh-todo-remove',
+              'aria-label': t('remove'), title: t('remove'),
+              onClick: () => remove(item.id),
+            }, '✕')),
+            open ? h(StepEditor, { t, item, addStep, toggleStep, removeStep }) : null);
+        }));
+    }
+
+    /** The expanded step area of one todo: its steps plus the add-step field. */
+    function StepEditor(props) {
+      const { t, item, addStep, toggleStep, removeStep } = props;
+      const [draft, setDraft] = React.useState('');
+      const steps = Array.isArray(item.steps) ? item.steps : [];
+      return h('div', { className: 'dsh-todo-steps' },
+        steps.length === 0
+          ? h('p', { className: 'dsh-todo-hint' }, t('steps.empty'))
+          : steps.map((step) => h('div', {
+            key: step.id,
+            className: 'dsh-todo-step' + (step.done ? ' dsh-todo-done' : ''),
+          },
+          h('input', {
+            className: 'dsh-todo-check dsh-todo-stepcheck', type: 'checkbox', checked: step.done,
+            'aria-label': t('toggle'),
+            onChange: () => toggleStep(item.id, step.id),
+          }),
+          h('span', { className: 'dsh-todo-text', onClick: () => toggleStep(item.id, step.id) }, step.text),
+          h('button', {
+            type: 'button', className: 'dsh-todo-remove',
+            'aria-label': t('remove'), title: t('remove'),
+            onClick: () => removeStep(item.id, step.id),
+          }, '✕'))),
+        h('form', {
+          className: 'dsh-todo-stepform',
+          onSubmit: (event) => {
+            event.preventDefault();
+            addStep(item.id, draft);
+            setDraft('');
+          },
         },
         h('input', {
-          className: 'dsh-todo-check', type: 'checkbox', checked: item.done,
-          'aria-label': t('toggle'),
-          onChange: () => toggle(item.id),
+          className: 'dsh-todo-input dsh-todo-stepinput', type: 'text', value: draft,
+          placeholder: t('steps.placeholder'), 'aria-label': t('steps.placeholder'),
+          onChange: (event) => setDraft(event.target.value),
         }),
-        h('span', { className: 'dsh-todo-text', onClick: () => toggle(item.id) }, item.text),
-        h('button', {
-          type: 'button', className: 'dsh-todo-remove',
-          'aria-label': t('remove'), title: t('remove'),
-          onClick: () => remove(item.id),
-        }, '✕'))));
+        h('button', { type: 'submit', className: 'dsh-todo-add dsh-todo-stepadd' }, t('steps.add'))));
+    }
+
+    /** The daily plan card: a list that clears itself at 08:00 every morning. */
+    function DailyPlanSection(props) {
+      const { t, plan } = props;
+      const [draft, setDraft] = React.useState('');
+      const submit = (event) => {
+        event.preventDefault();
+        plan.add();
+        setDraft('');
+      };
+      const items = plan.items;
+      return Section(t('section.daily'), 'daily',
+        h('div', { className: 'dsh-todo-dailyhead' },
+        h('span', { className: 'dsh-todo-hint' }, t('daily.day').replace('{day}', plan.day)),
+        plan.doneCount > 0
+          ? h('button', {
+            type: 'button', className: 'dsh-todo-clear',
+            onClick: plan.clearDone,
+          }, t('clearDone'))
+          : null),
+        h('form', { className: 'dsh-todo-form', onSubmit: submit },
+        h('input', {
+          className: 'dsh-todo-input', type: 'text', value: draft,
+          placeholder: t('daily.placeholder'), 'aria-label': t('daily.placeholder'),
+          onChange: (event) => setDraft(event.target.value),
+        }),
+        h('button', { type: 'submit', className: 'dsh-todo-add' }, t('add'))),
+        items.length === 0
+          ? h('p', { className: 'dsh-todo-empty' }, t('daily.empty'))
+          : h('ul', { className: 'dsh-todo-list' },
+            items.map((item) => h('li', {
+              key: item.id,
+              className: 'dsh-todo-item' + (item.done ? ' dsh-todo-done' : ''),
+            },
+            h('input', {
+              className: 'dsh-todo-check', type: 'checkbox', checked: item.done,
+              'aria-label': t('toggle'),
+              onChange: () => plan.toggle(item.id),
+            }),
+            h('span', { className: 'dsh-todo-text', onClick: () => plan.toggle(item.id) }, item.text),
+            h('button', {
+              type: 'button', className: 'dsh-todo-remove',
+              'aria-label': t('remove'), title: t('remove'),
+              onClick: () => plan.remove(item.id),
+            }, '✕')))),
+        h('p', { className: 'dsh-todo-hint' }, t('daily.rollover')));
     }
 
     /** The add-todo input row. */
@@ -609,6 +843,7 @@ window.__ModuleLoader__.load({
     function TodoBody(props) {
       const { t } = props;
       const local = useLocalTodos();
+      const daily = useDailyPlan();
       const { todos, doneCount } = local;
 
       // The session standard kit provides `useProjection(key)` to every
@@ -644,7 +879,16 @@ window.__ModuleLoader__.load({
             : null),
         renderTodoForm(t, local),
         h('div', { className: 'dsh-todo-sections' },
-          Section(t('section.mine'), 'mine', renderTodoList(t, local.todos, local.toggle, local.remove)),
+          Section(t('section.mine'), 'mine', h(TodoList, {
+            t,
+            todos: local.todos,
+            toggle: local.toggle,
+            remove: local.remove,
+            addStep: local.addStep,
+            toggleStep: local.toggleStep,
+            removeStep: local.removeStep,
+          })),
+          pluginSettings === null || pluginSettings.read().value.showDaily === false ? null : Section(t('section.daily'), 'daily', h(DailyPlanSection, { t, plan: daily })),
           h(AgentSection, { t, todos: todosProjection, sessionId: props.sessionId }),
           h(SubagentsSection, { t, catalog: catalogProjection, readChildValues: (id) => sessionValuesOf(pluginCtx, id) }),
           h(GoalSection, { t, projection: goalProjection }),
@@ -858,6 +1102,13 @@ window.__ModuleLoader__.load({
             onChange: (event) => edit('autoOpen', event.target.checked),
           })),
         h('div', { className: 'dsh-todo-cfg-row' },
+          h('span', { className: 'dsh-todo-cfg-label' }, t('settings.showDaily')),
+          h('input', {
+            type: 'checkbox', className: 'dsh-todo-cfg-check', disabled: readOnly,
+            checked: value.showDaily !== false,
+            onChange: (event) => edit('showDaily', event.target.checked),
+          })),
+        h('div', { className: 'dsh-todo-cfg-row' },
           h('span', { className: 'dsh-todo-cfg-label' }, t('settings.showSessionView')),
           h('input', {
             type: 'checkbox', className: 'dsh-todo-cfg-check', disabled: readOnly,
@@ -1054,7 +1305,15 @@ window.__ModuleLoader__.load({
                 : null),
             renderTodoForm(translate, local),
             h('div', { className: 'dsh-todo-sections' },
-              Section(translate('section.mine'), 'mine', renderTodoList(translate, local.todos, local.toggle, local.remove))))));
+              Section(translate('section.mine'), 'mine', h(TodoList, {
+                t: translate,
+                todos: local.todos,
+                toggle: local.toggle,
+                remove: local.remove,
+                addStep: local.addStep,
+                toggleStep: local.toggleStep,
+                removeStep: local.removeStep,
+              }))))));
     }
 
     /** The shell overlay toast for one notification, drawn with the product's Toast. */
@@ -1092,6 +1351,16 @@ window.__ModuleLoader__.load({
             'stat.done': '已完成',
             'stat.total': '全部',
             'section.mine': '我的待办',
+            'section.daily': '每日计划',
+            'steps.expand': '展开步骤',
+            'steps.collapse': '收起步骤',
+            'steps.empty': '还没有步骤，添加第一条。',
+            'steps.placeholder': '添加步骤，回车确认',
+            'steps.add': '添加',
+            'daily.day': '计划日 {day}',
+            'daily.placeholder': '今天的计划，回车确认',
+            'daily.empty': '今天还没有安排。',
+            'daily.rollover': '每天 8:00 自动刷新为新的一天。',
             'section.agent': 'Agent 任务列表',
             'section.goal': '目标',
             'section.plan': '计划模式',
@@ -1135,6 +1404,7 @@ window.__ModuleLoader__.load({
             'settings.composerCards.panel': '用本插件的“任务与目标”卡替换',
             'settings.composerCards.hidden': '全部隐藏（只在侧栏显示）',
             'settings.autoOpen': '任务创建或目标设置时自动展开右侧栏',
+            'settings.showDaily': '显示每日计划区块',
             'dock.title': '任务与目标',
             'settings.autoOpen': '任务创建或目标设置时自动展开右侧栏',
             'dock.title': '任务与目标',
@@ -1157,6 +1427,16 @@ window.__ModuleLoader__.load({
             'stat.done': 'Done',
             'stat.total': 'Total',
             'section.mine': 'My todos',
+            'section.daily': 'Daily plan',
+            'steps.expand': 'Expand steps',
+            'steps.collapse': 'Collapse steps',
+            'steps.empty': 'No steps yet — add the first one.',
+            'steps.placeholder': 'Add a step and press Enter',
+            'steps.add': 'Add',
+            'daily.day': 'Plan day {day}',
+            'daily.placeholder': 'Plan for today — press Enter to add.',
+            'daily.empty': 'Nothing planned for today.',
+            'daily.rollover': 'Refreshes automatically at 8:00 every morning.',
             'section.agent': 'Agent task list',
             'section.goal': 'Goal',
             'section.plan': 'Plan mode',
@@ -1200,6 +1480,7 @@ window.__ModuleLoader__.load({
             'settings.composerCards.panel': 'Replace them with our Tasks & goal card',
             'settings.composerCards.hidden': 'Hide them (sidebar only)',
             'settings.autoOpen': 'Open the sidebar when a task or goal appears',
+            'settings.showDaily': 'Show the daily plan section',
             'dock.title': 'Tasks & goal',
             'settings.autoOpen': 'Open the sidebar when a task or goal appears',
             'dock.title': 'Tasks & goal',

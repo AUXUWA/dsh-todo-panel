@@ -15,6 +15,7 @@ export const Config = Schema.object({
   showSessionView: Schema.boolean().default(true).description('在会话视图（对话/轨迹切换处）显示"待办"视图'),
   composerCards: Schema.union(['native', 'panel', 'hidden']).default('panel').description('输入框上方的任务/目标卡片：native 保留原生 / panel 用本插件卡片替换 / hidden 全部隐藏只在侧栏显示'),
   autoOpen: Schema.boolean().default(true).description('任务创建或目标设置时自动展开右侧栏'),
+  showDaily: Schema.boolean().default(true).description('在侧栏显示每日计划区块'),
 });
 
 /** Host half of the todo bundle; the Client module owns the rendering and notifications. */
