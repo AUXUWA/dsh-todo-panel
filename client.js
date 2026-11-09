@@ -156,6 +156,8 @@ window.__ModuleLoader__.load({
         '.dsh-todo-stat-open{--stat:var(--dsw-alias-label-primary,inherit);}',
         '.dsh-todo-stat-done{--stat:var(--dsw-alias-state-success-primary,#3a9e5f);}',
         '.dsh-todo-input{border-radius:999px;padding:8px 13px;}',
+        '.dsh-todo input:focus,.dsh-todo input:focus-visible,.dsh-todo-page input:focus,.dsh-todo-page input:focus-visible{outline:none!important;box-shadow:none!important;}',
+        '.dsh-todo input:focus-visible,.dsh-todo-page input:focus-visible{outline:none!important;}',
         '.dsh-todo-add{border-radius:999px;padding:0 14px;}',
         '.dsh-todo-item{padding:6px 8px;border:1px solid transparent;border-radius:8px;transition:border-color .2s ease-in-out,background-color .2s ease-in-out,transform .2s ease-in-out,box-shadow .2s ease-in-out;}',
         '.dsh-todo-item:hover{transform:translateY(-1px);border-color:var(--dsw-alias-border-l1,rgba(127,127,127,.25));box-shadow:0 2px 10px rgba(0,0,0,.08);}',
