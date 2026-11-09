@@ -43,6 +43,49 @@ window.__ModuleLoader__.load({
     };
     /** Config fields the settings form edits, in save order. */
     const CONFIG_FIELDS = ['notifyGoalComplete', 'notifyPlanSubmitted', 'popupEnabled', 'soundEnabled', 'tone', 'customSoundUrl', 'showSessionView', 'composerCards', 'autoOpen', 'showDaily'];
+    /** Collapsed-section state, shared by the right sidebar and the left manager. */
+    const COLLAPSED_KEY = 'dsh-todo-panel.collapsed.v1';
+
+    const collapsedStore = (() => {
+      const listeners = new Set();
+      let value = readCollapsed();
+      function readCollapsed() {
+        try {
+          const parsed = JSON.parse(localStorage.getItem(COLLAPSED_KEY));
+          return parsed !== null && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {};
+        } catch (unreadable) {
+          return {};
+        }
+      }
+      function persist(next) {
+        try {
+          localStorage.setItem(COLLAPSED_KEY, JSON.stringify(next));
+        } catch (unavailable) {
+          // Keep the state in memory for this page session.
+        }
+      }
+      return {
+        getSnapshot: () => value,
+        subscribe(listener) {
+          listeners.add(listener);
+          return () => listeners.delete(listener);
+        },
+        toggle(id) {
+          const next = { ...value, [id]: value[id] !== true };
+          value = next;
+          persist(next);
+          for (const listener of [...listeners]) listener();
+        },
+      };
+    })();
+
+    /** Collapsed state shared by every surface that renders a section. */
+    function useCollapsed() {
+      const map = React.useSyncExternalStore(collapsedStore.subscribe, collapsedStore.getSnapshot);
+      const toggle = React.useCallback((id) => collapsedStore.toggle(id), []);
+      return { map, toggle };
+    }
+
     /** The left-rail entry and its main panel share this id. */
     const PANEL_ID = 'todo-panel';
 
@@ -193,6 +236,11 @@ window.__ModuleLoader__.load({
         '.dsh-todo-sec-empty{padding:6px 12px;gap:0;}',
         '.dsh-todo-sec-empty .dsh-todo-sectitle:before{display:none;}',
         '.dsh-todo-sec-hint{margin-left:auto;font-size:11px;color:var(--dsw-alias-label-tertiary,rgba(127,127,127,.7));}',
+        '.dsh-todo-sectitle-btn{border:none;background:none;color:inherit;font:inherit;display:flex;align-items:center;gap:6px;width:100%;text-align:left;cursor:pointer;padding:0;}',
+        '.dsh-todo-sectitle-btn:before{display:none;}',
+        '.dsh-todo-sectitle-btn:hover{color:var(--dsw-alias-label-primary,inherit);}',
+        '.dsh-todo-sectitle-btn .dsh-todo-caret{width:12px;height:12px;font-size:9px;line-height:12px;}',
+        '.dsh-todo-sec-meta{margin-left:auto;font-size:11px;font-weight:400;color:var(--dsw-alias-label-tertiary,rgba(127,127,127,.7));font-variant-numeric:tabular-nums;padding-left:8px;}',
         '.dsh-todo-dock{--hero-a:#7c5cff;--hero-b:#19b8c4;box-sizing:border-box;width:100%;max-width:var(--dsh-composer-card-max-width,720px);margin:0 auto 6px;border:1px solid color-mix(in srgb,var(--hero-a) 24%,var(--dsw-alias-border-l1,rgba(127,127,127,.2)));border-radius:12px;background:radial-gradient(circle at 8% 0%,color-mix(in srgb,var(--hero-a) 10%,transparent),transparent 46%),var(--dsw-alias-bg-layer-1,transparent);padding:8px 11px;display:flex;flex-direction:column;gap:5px;cursor:pointer;min-width:0;box-shadow:0 6px 20px color-mix(in srgb,var(--hero-a) 6%,transparent);transition:border-color .2s ease-in-out,box-shadow .2s ease-in-out;}',
         '.dsh-todo-dock:hover,.dsh-todo-dock:focus-visible{border-color:color-mix(in srgb,var(--hero-a) 45%,var(--dsw-alias-border-l1,rgba(127,127,127,.2)));box-shadow:0 8px 26px color-mix(in srgb,var(--hero-a) 12%,transparent);outline:none;}',
         '.dsh-todo-dock-head{display:flex;align-items:center;gap:8px;min-width:0;}',
@@ -522,7 +570,7 @@ window.__ModuleLoader__.load({
               'aria-label': t(open ? 'steps.collapse' : 'steps.expand'),
               title: t(open ? 'steps.collapse' : 'steps.expand'),
               onClick: () => toggleOpen(item.id),
-            }, open ? '▾' : '▸') : null,
+            }, '▸') : null,
             h('input', {
               className: 'dsh-todo-check', type: 'checkbox', checked: item.done,
               'aria-label': t('toggle'),
@@ -680,6 +728,30 @@ window.__ModuleLoader__.load({
         h('span', { className: 'dsh-todo-sec-hint' }, hintText));
     }
 
+    /**
+     * A section whose body can be folded away. The header doubles as the toggle,
+     * so the panel stays compact when a list is long.
+     */
+    function CollapsibleSection(props) {
+      const { id, title, mod, collapsed, onToggle, meta, hint, children } = props;
+      const open = collapsed[id] !== true;
+      const hasBody = children !== undefined && children !== null && children !== false;
+      return h('div', { className: `dsh-todo-section dsh-todo-c-${mod}${hasBody ? '' : ' dsh-todo-sec-empty'}` },
+        h('button', {
+          type: 'button',
+          className: 'dsh-todo-sectitle dsh-todo-sectitle-btn',
+          'aria-expanded': open,
+          onClick: () => onToggle(id),
+        },
+        h('span', {
+          className: 'dsh-todo-caret' + (open && hasBody ? ' dsh-todo-caret-open' : ''),
+          'aria-hidden': true,
+        }, '\u25b8'),
+        title,
+        h('span', { className: 'dsh-todo-sec-meta' }, hasBody ? meta : hint)),
+        open && hasBody ? children : null);
+    }
+
     function Section(title, mod, ...children) {
       return h('div', { className: `dsh-todo-section dsh-todo-c-${mod}` },
         h('p', { className: 'dsh-todo-sectitle' }, title),
@@ -748,8 +820,18 @@ window.__ModuleLoader__.load({
       const current = Array.isArray(value);
       if (current && isAllDone(value)) forgetTodos(sessionId);
       const todos = current ? value : rememberedTodos(sessionId);
+      const card = (body, meta, hint) => h(CollapsibleSection, {
+        id: 'agent',
+        title: t('section.agent'),
+        mod: 'agent',
+        collapsed: props.collapsed,
+        onToggle: props.onToggle,
+        meta,
+        hint,
+        children: body,
+      });
       if (!Array.isArray(todos) || todos.length === 0) {
-        return SectionSlim(t('section.agent'), 'agent', t('agent.empty'));
+        return card(null, '0', t('agent.empty'));
       }
       const rows = todos.map((item, index) => {
         const cls = 'dsh-todo-atask'
@@ -760,9 +842,13 @@ window.__ModuleLoader__.load({
           h('span', { className: glyphCls, 'aria-hidden': true }, AGENT_GLYPHS[item.status] ?? 'o'),
           h('span', { className: 'dsh-todo-atext' }, item.content));
       });
-      return Section(t('section.agent'), 'agent',
-        current ? null : h('p', { className: 'dsh-todo-astale' }, t('agent.stale')),
-        rows);
+      return card(
+        h(React.Fragment, null,
+          current ? null : h('p', { className: 'dsh-todo-astale' }, t('agent.stale')),
+          rows),
+        String(todos.length),
+        t('agent.empty'),
+      );
     }
 
     /**
@@ -882,6 +968,7 @@ window.__ModuleLoader__.load({
       const { t } = props;
       const local = useLocalTodos();
       const daily = useDailyPlan();
+      const collapse = useCollapsed();
       const { todos, doneCount } = local;
 
 
@@ -918,15 +1005,24 @@ window.__ModuleLoader__.load({
             : null),
         renderTodoForm(t, local),
         h('div', { className: 'dsh-todo-sections' },
-          Section(t('section.mine'), 'mine', h(TodoList, {
-            t,
-            todos: local.todos,
-            toggle: local.toggle,
-            remove: local.remove,
-            addStep: local.addStep,
-            toggleStep: local.toggleStep,
-            removeStep: local.removeStep,
-          })),
+          h(CollapsibleSection, {
+            id: 'mine',
+            title: t('section.mine'),
+            mod: 'mine',
+            collapsed: collapse.map,
+            onToggle: collapse.toggle,
+            meta: String(local.todos.length),
+            hint: t('empty'),
+            children: h(TodoList, {
+              t,
+              todos: local.todos,
+              toggle: local.toggle,
+              remove: local.remove,
+              addStep: local.addStep,
+              toggleStep: local.toggleStep,
+              removeStep: local.removeStep,
+            }),
+          }),
           (() => {
             let show = true;
             try {
@@ -935,9 +1031,25 @@ window.__ModuleLoader__.load({
             } catch (unreadableSetting) {
               show = true;
             }
-            return show ? Section(t('section.daily'), 'daily', h(DailyPlanSection, { t, plan: daily })) : null;
+            if (!show) return null;
+            return h(CollapsibleSection, {
+              id: 'daily',
+              title: t('section.daily'),
+              mod: 'daily',
+              collapsed: collapse.map,
+              onToggle: collapse.toggle,
+              meta: String(daily.items.length),
+              hint: t('daily.empty'),
+              children: h(DailyPlanSection, { t, plan: daily }),
+            });
           })(),
-          h(AgentSection, { t, todos: todosProjection, sessionId: props.sessionId }),
+          h(AgentSection, {
+            t,
+            todos: todosProjection,
+            sessionId: props.sessionId,
+            collapsed: collapse.map,
+            onToggle: collapse.toggle,
+          }),
           h(SubagentsSection, { t, catalog: catalogProjection, readChildValues: (id) => sessionValuesOf(pluginCtx, id) }),
           h(GoalSection, { t, projection: goalProjection }),
           h(PlanSection, { t, plan: planProjection })));
@@ -1341,6 +1453,7 @@ window.__ModuleLoader__.load({
       const translate = props.t ?? ((key) => key);
       const local = useLocalTodos();
       const daily = useDailyPlan();
+      const collapse = useCollapsed();
       const { todos, doneCount } = local;
       let showDaily = true;
       try {
@@ -1349,9 +1462,15 @@ window.__ModuleLoader__.load({
       } catch (unreadableSetting) {
         showDaily = true;
       }
-      const mine = local.todos.length === 0
-        ? SectionSlim(translate('section.mine'), 'mine', translate('empty'))
-        : Section(translate('section.mine'), 'mine', h(TodoList, {
+      const mine = h(CollapsibleSection, {
+        id: 'mine',
+        title: translate('section.mine'),
+        mod: 'mine',
+        collapsed: collapse.map,
+        onToggle: collapse.toggle,
+        meta: String(local.todos.length),
+        hint: translate('empty'),
+        children: h(TodoList, {
           t: translate,
           todos: local.todos,
           toggle: local.toggle,
@@ -1359,9 +1478,19 @@ window.__ModuleLoader__.load({
           addStep: local.addStep,
           toggleStep: local.toggleStep,
           removeStep: local.removeStep,
-        }));
+        }),
+      });
       const dailySection = showDaily
-        ? Section(translate('section.daily'), 'daily', h(DailyPlanSection, { t: translate, plan: daily }))
+        ? h(CollapsibleSection, {
+          id: 'daily',
+          title: translate('section.daily'),
+          mod: 'daily',
+          collapsed: collapse.map,
+          onToggle: collapse.toggle,
+          meta: String(daily.items.length),
+          hint: translate('daily.empty'),
+          children: h(DailyPlanSection, { t: translate, plan: daily }),
+        })
         : null;
       return h(
         'div',
