@@ -1334,8 +1334,32 @@ window.__ModuleLoader__.load({
     function TodoManagerPanel(props) {
       const translate = props.t ?? ((key) => key);
       const local = useLocalTodos();
+      const daily = useDailyPlan();
       const { todos, doneCount } = local;
-      return h('div', { className: 'dsh-todo-page' },
+      let showDaily = true;
+      try {
+        const value = pluginSettings === null ? undefined : pluginSettings.read().value;
+        if (value !== undefined && value !== null && value.showDaily === false) showDaily = false;
+      } catch (unreadableSetting) {
+        showDaily = true;
+      }
+      const mine = local.todos.length === 0
+        ? SectionSlim(translate('section.mine'), 'mine', translate('empty'))
+        : Section(translate('section.mine'), 'mine', h(TodoList, {
+          t: translate,
+          todos: local.todos,
+          toggle: local.toggle,
+          remove: local.remove,
+          addStep: local.addStep,
+          toggleStep: local.toggleStep,
+          removeStep: local.removeStep,
+        }));
+      const dailySection = showDaily
+        ? Section(translate('section.daily'), 'daily', h(DailyPlanSection, { t: translate, plan: daily }))
+        : null;
+      return h(
+        'div',
+        { className: 'dsh-todo-page' },
         h(PanelBoundary, null,
           h('div', { className: 'dsh-todo' },
             renderHero(translate, 'panel.eyebrowLocal', todos, doneCount,
@@ -1347,15 +1371,8 @@ window.__ModuleLoader__.load({
                 : null),
             renderTodoForm(translate, local),
             h('div', { className: 'dsh-todo-sections' },
-              local.todos.length === 0 ? SectionSlim(translate('section.mine'), 'mine', translate('empty')) : Section(translate('section.mine'), 'mine', h(TodoList, {
-                t: translate,
-                todos: local.todos,
-                toggle: local.toggle,
-                remove: local.remove,
-                addStep: local.addStep,
-                toggleStep: local.toggleStep,
-                removeStep: local.removeStep,
-              }))))));
+              mine,
+              dailySection))));
     }
 
     /** The shell overlay toast for one notification, drawn with the product's Toast. */
