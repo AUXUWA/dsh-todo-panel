@@ -472,10 +472,10 @@ window.__ModuleLoader__.load({
         draft,
         setDraft,
         doneCount,
-        add() {
-          const text = draft.trim();
-          if (text === '') return;
-          setPlan((previous) => ({ ...previous, items: previous.items.concat({ id: rowId(), text, done: false }) }));
+        add(text) {
+          const value = String(text ?? draft).trim();
+          if (value === '') return;
+          setPlan((previous) => ({ ...previous, items: previous.items.concat({ id: rowId(), text: value, done: false }) }));
           setDraft('');
         },
         toggle(id) {
@@ -586,7 +586,7 @@ window.__ModuleLoader__.load({
       const [draft, setDraft] = React.useState('');
       const submit = (event) => {
         event.preventDefault();
-        plan.add();
+        plan.add(draft);
         setDraft('');
       };
       const items = plan.items;
@@ -921,7 +921,16 @@ window.__ModuleLoader__.load({
             toggleStep: local.toggleStep,
             removeStep: local.removeStep,
           })),
-          pluginSettings === null || pluginSettings.read().value.showDaily === false ? null : Section(t('section.daily'), 'daily', h(DailyPlanSection, { t, plan: daily })),
+          (() => {
+            let show = true;
+            try {
+              const value = pluginSettings === null ? undefined : pluginSettings.read().value;
+              if (value !== undefined && value !== null && value.showDaily === false) show = false;
+            } catch (unreadableSetting) {
+              show = true;
+            }
+            return show ? Section(t('section.daily'), 'daily', h(DailyPlanSection, { t, plan: daily })) : null;
+          })(),
           h(AgentSection, { t, todos: todosProjection, sessionId: props.sessionId }),
           h(SubagentsSection, { t, catalog: catalogProjection, readChildValues: (id) => sessionValuesOf(pluginCtx, id) }),
           h(GoalSection, { t, projection: goalProjection }),

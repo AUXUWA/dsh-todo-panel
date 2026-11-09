@@ -1,6 +1,6 @@
 {
   "name": "@auxuwa/dsh-todo-panel",
-  "version": "2.0.2",
+  "version": "2.0.3",
   "private": true,
   "type": "module",
   "description": "Right-sidebar todo overview panel for the dsh web client: agent task list, goal, plan mode, personal todos, and notifications",
