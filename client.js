@@ -157,7 +157,10 @@ window.__ModuleLoader__.load({
         '.dsh-todo-stat-done{--stat:var(--dsw-alias-state-success-primary,#3a9e5f);}',
         '.dsh-todo-input{border-radius:999px;padding:8px 13px;}',
         '.dsh-todo input:focus,.dsh-todo input:focus-visible,.dsh-todo-page input:focus,.dsh-todo-page input:focus-visible{outline:none!important;box-shadow:none!important;}',
-        '.dsh-todo input:focus-visible,.dsh-todo-page input:focus-visible{outline:none!important;}',
+        '.dsh-todo *:focus-within,.dsh-todo-page *:focus-within{outline:none!important;box-shadow:none!important;}',
+        '.dsh-todo *:focus-within,.dsh-todo-page *:focus-within{--dsw-focus-ring-width:0px;--dsw-focus-ring-color:transparent;--dsw-focus-ring-shadow:none;}',
+        '.dsh-todo *:focus-within::before,.dsh-todo *:focus-within::after,.dsh-todo-page *:focus-within::before,.dsh-todo-page *:focus-within::after{--dsw-focus-ring-width:0px;--dsw-focus-ring-color:transparent;}',
+        '.dsh-todo *:focus-within::before,.dsh-todo *:focus-within::after,.dsh-todo-page *:focus-within::before,.dsh-todo-page *:focus-within::after{outline:none!important;box-shadow:none!important;}',
         '.dsh-todo-add{border-radius:999px;padding:0 14px;}',
         '.dsh-todo-item{padding:6px 8px;border:1px solid transparent;border-radius:8px;transition:border-color .2s ease-in-out,background-color .2s ease-in-out,transform .2s ease-in-out,box-shadow .2s ease-in-out;}',
         '.dsh-todo-item:hover{transform:translateY(-1px);border-color:var(--dsw-alias-border-l1,rgba(127,127,127,.25));box-shadow:0 2px 10px rgba(0,0,0,.08);}',
@@ -880,6 +883,7 @@ window.__ModuleLoader__.load({
       const local = useLocalTodos();
       const daily = useDailyPlan();
       const { todos, doneCount } = local;
+
 
       // The session standard kit provides `useProjection(key)` to every
       // session-scoped seat (ui-session BUILTIN_SOURCE keyedHooks) — the same
