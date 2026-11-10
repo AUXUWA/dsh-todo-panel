@@ -220,13 +220,16 @@ window.__ModuleLoader__.load({
         '.dsh-todo-subagent-head{display:flex;align-items:center;gap:8px;margin:0;min-width:0;}',
         '.dsh-todo-subagent-name{flex:1;min-width:0;font-size:11.5px;font-weight:650;color:var(--dsw-alias-label-primary,inherit);overflow-wrap:anywhere;}',
         '.dsh-todo-caret{border:none;background:none;color:var(--dsw-alias-label-tertiary,rgba(127,127,127,.7));cursor:pointer;padding:0;width:14px;height:14px;flex:none;display:inline-flex;align-items:center;justify-content:center;font-size:10px;line-height:1;transition:transform .12s,color .12s;}',
+        '.dsh-todo-item{position:relative;}',
+        '.dsh-todo-item > .dsh-todo-caret{position:absolute;left:-16px;top:50%;margin-top:-7px;}',
+        '.dsh-todo-list-caret{padding-left:16px;}',
         '.dsh-todo-caret:hover{color:var(--dsw-alias-label-primary,inherit);}',
         '.dsh-todo-caret-open{transform:rotate(90deg);}',
         '.dsh-todo-addstep{border:none;background:none;color:var(--dsw-alias-label-tertiary,rgba(127,127,127,.7));cursor:pointer;opacity:0;font-size:13px;line-height:1;padding:2px 4px;flex:none;transition:opacity .15s,color .15s;}',
         '.dsh-todo-item:hover .dsh-todo-addstep,.dsh-todo-addstep:focus-visible{opacity:.8;}',
         '.dsh-todo-addstep:hover{opacity:1;color:var(--dsw-alias-label-primary,inherit);}',
         '.dsh-todo-stepcount{flex:none;font-size:10px;color:var(--dsw-alias-label-tertiary,rgba(127,127,127,.7));font-variant-numeric:tabular-nums;}',
-        '.dsh-todo-steps{margin:2px 0 0 22px;display:flex;flex-direction:column;gap:2px;border-left:2px solid var(--dsw-alias-border-l1,rgba(127,127,127,.18));padding-left:10px;}',
+        '.dsh-todo-steps{margin:2px 0 0 24px;display:flex;flex-direction:column;gap:2px;border-left:2px solid var(--dsw-alias-border-l1,rgba(127,127,127,.18));padding-left:10px;}',
         '.dsh-todo-step{display:flex;align-items:center;gap:7px;padding:2px 4px;border-radius:6px;}',
         '.dsh-todo-step .dsh-todo-text{font-size:12.5px;}',
         '.dsh-todo-stepcheck{width:13px;height:13px;}',
@@ -241,6 +244,7 @@ window.__ModuleLoader__.load({
         '.dsh-todo-sectitle-btn:hover{color:var(--dsw-alias-label-primary,inherit);}',
         '.dsh-todo-sectitle-btn .dsh-todo-caret{width:12px;height:12px;font-size:9px;line-height:12px;}',
         '.dsh-todo-sec-meta{margin-left:auto;font-size:11px;font-weight:400;color:var(--dsw-alias-label-tertiary,rgba(127,127,127,.7));font-variant-numeric:tabular-nums;padding-left:8px;}',
+        '.dsh-todo-dailybadge{flex:none;font-size:9px;line-height:15px;padding:0 6px;border-radius:999px;background:rgba(25,184,196,.14);color:#19b8c4;letter-spacing:.02em;}',
         '.dsh-todo-dock{--hero-a:#7c5cff;--hero-b:#19b8c4;box-sizing:border-box;width:100%;max-width:var(--dsh-composer-card-max-width,720px);margin:0 auto 6px;border:1px solid color-mix(in srgb,var(--hero-a) 24%,var(--dsw-alias-border-l1,rgba(127,127,127,.2)));border-radius:12px;background:radial-gradient(circle at 8% 0%,color-mix(in srgb,var(--hero-a) 10%,transparent),transparent 46%),var(--dsw-alias-bg-layer-1,transparent);padding:8px 11px;display:flex;flex-direction:column;gap:5px;cursor:pointer;min-width:0;box-shadow:0 6px 20px color-mix(in srgb,var(--hero-a) 6%,transparent);transition:border-color .2s ease-in-out,box-shadow .2s ease-in-out;}',
         '.dsh-todo-dock:hover,.dsh-todo-dock:focus-visible{border-color:color-mix(in srgb,var(--hero-a) 45%,var(--dsw-alias-border-l1,rgba(127,127,127,.2)));box-shadow:0 8px 26px color-mix(in srgb,var(--hero-a) 12%,transparent);outline:none;}',
         '.dsh-todo-dock-head{display:flex;align-items:center;gap:8px;min-width:0;}',
@@ -473,18 +477,26 @@ window.__ModuleLoader__.load({
       return day.getFullYear() + '-' + pad(day.getMonth() + 1) + '-' + pad(day.getDate());
     }
 
-    /** Read the stored daily plan, discarding it once its day has rolled over. */
+    /**
+     * Read the stored daily plan. The tasks persist across days: each new day
+     * resets them to unfinished and advances the streak.
+     */
     function loadDailyPlan() {
       const day = planDayOf(new Date());
       try {
         const raw = JSON.parse(localStorage.getItem(DAILY_PLAN_KEY));
-        if (raw !== null && typeof raw === 'object' && raw.day === day && Array.isArray(raw.items)) {
-          return { day, items: normalizeSteps(raw.items) };
+        if (raw !== null && typeof raw === 'object' && Array.isArray(raw.items)) {
+          return {
+            day,
+            items: normalizeSteps(raw.items),
+            streak: typeof raw.streak === 'number' ? raw.streak : 0,
+            lastCompletedDay: typeof raw.lastCompletedDay === 'string' ? raw.lastCompletedDay : undefined,
+          };
         }
       } catch (storageUnavailable) {
-        // Fall through to a fresh plan.
+        // Fall through to an empty plan.
       }
-      return { day, items: [] };
+      return { day, items: [], streak: 0, lastCompletedDay: undefined };
     }
 
     function saveDailyPlan(plan) {
@@ -505,7 +517,19 @@ window.__ModuleLoader__.load({
       React.useEffect(() => {
         const tick = () => {
           const day = planDayOf(new Date());
-          setPlan((previous) => (previous.day === day ? previous : { day, items: [] }));
+          setPlan((previous) => {
+            if (previous.day === day) return previous;
+            // A new day: the same tasks start over, unfinished. Completing them
+            // yesterday counts toward the streak.
+            const completedYesterday = previous.items.length > 0
+              && previous.items.every((item) => item.done);
+            return {
+              day,
+              items: previous.items.map((item) => ({ ...item, done: false })),
+              streak: completedYesterday ? previous.streak + 1 : 0,
+              lastCompletedDay: completedYesterday ? previous.day : previous.lastCompletedDay,
+            };
+          });
         };
         const timer = setInterval(tick, 30000);
         const onVisible = () => {
@@ -522,6 +546,7 @@ window.__ModuleLoader__.load({
       return {
         day: plan.day,
         items: plan.items,
+        streak: plan.streak ?? 0,
         draft,
         setDraft,
         doneCount,
@@ -557,7 +582,7 @@ window.__ModuleLoader__.load({
         return h('p', { className: 'dsh-todo-empty' }, t('empty'));
       }
       const toggleOpen = (id) => setExpanded((previous) => ({ ...previous, [id]: previous[id] !== true }));
-      return h('ul', { className: 'dsh-todo-list' },
+      return h('ul', { className: 'dsh-todo-list dsh-todo-list-caret' },
         todos.map((item) => {
           const steps = Array.isArray(item.steps) ? item.steps : [];
           const stepsDone = steps.reduce((sum, step) => (step.done ? sum + 1 : sum), 0);
@@ -647,6 +672,9 @@ window.__ModuleLoader__.load({
       const body = h(React.Fragment, null,
         slim ? null : h('div', { className: 'dsh-todo-dailyhead' },
           h('span', { className: 'dsh-todo-hint' }, t('daily.day').replace('{day}', plan.day)),
+          plan.streak > 0
+            ? h('span', { className: 'dsh-todo-badge' }, t('daily.streak').replace('{days}', String(plan.streak)))
+            : null,
           plan.doneCount > 0
             ? h('button', {
               type: 'button', className: 'dsh-todo-clear',
@@ -675,12 +703,13 @@ window.__ModuleLoader__.load({
                 onChange: () => plan.toggle(item.id),
               }),
               h('span', { className: 'dsh-todo-text', onClick: () => plan.toggle(item.id) }, item.text),
+              h('span', { className: 'dsh-todo-dailybadge' }, t('daily.everyDay')),
               h('button', {
                 type: 'button', className: 'dsh-todo-remove',
                 'aria-label': t('remove'), title: t('remove'),
                 onClick: () => plan.remove(item.id),
               }, '✕')))),
-        slim ? h('p', { className: 'dsh-todo-hint' }, t('daily.rollover')) : null);
+        h('p', { className: 'dsh-todo-hint' }, t('daily.rollover')));
       return body;
     }
 
@@ -1554,7 +1583,9 @@ window.__ModuleLoader__.load({
             'daily.day': '计划日 {day}',
             'daily.placeholder': '今天的计划，回车确认',
             'daily.empty': '今天还没有安排。',
-            'daily.rollover': '每天 8:00 自动刷新为新的一天。',
+            'daily.rollover': '每天 8:00 自动重置为未完成，任务本身保留。',
+            'daily.streak': '连续 {days} 天',
+            'daily.everyDay': '每天',
             'section.agent': 'Agent 任务列表',
             'section.goal': '目标',
             'section.plan': '计划模式',
@@ -1630,7 +1661,9 @@ window.__ModuleLoader__.load({
             'daily.day': 'Plan day {day}',
             'daily.placeholder': 'Plan for today — press Enter to add.',
             'daily.empty': 'Nothing planned for today.',
-            'daily.rollover': 'Refreshes automatically at 8:00 every morning.',
+            'daily.rollover': 'Resets to unfinished every day at 8:00 — the tasks themselves stay.',
+            'daily.streak': '{days}-day streak',
+            'daily.everyDay': 'daily',
             'section.agent': 'Agent task list',
             'section.goal': 'Goal',
             'section.plan': 'Plan mode',
